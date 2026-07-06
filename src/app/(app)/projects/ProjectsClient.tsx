@@ -21,13 +21,18 @@ export function ProjectsClient({
   const [keyword, setKeyword] = useState("");
   const [staffId, setStaffId] = useState("");
   const [status, setStatus] = useState<ProjectStatus | "">("");
-  const [year, setYear] = useState("");
-  const [month, setMonth] = useState("");
+  const [monthTab, setMonthTab] = useState("all");
 
-  const years = useMemo(() => {
-    const set = new Set(projects.map((p) => p.start_date.slice(0, 4)));
-    return Array.from(set).sort().reverse();
+  const monthTabs = useMemo(() => {
+    const set = new Set(projects.map((p) => p.start_date.slice(0, 7)));
+    return Array.from(set).sort();
   }, [projects]);
+
+  // 複数年にまたがる場合のみ「2026年7月」のように年を併記して曖昧さを避ける
+  const spansMultipleYears = useMemo(
+    () => new Set(monthTabs.map((m) => m.slice(0, 4))).size > 1,
+    [monthTabs]
+  );
 
   const filtered = useMemo(() => {
     return projects.filter((p) => {
@@ -39,11 +44,10 @@ export function ProjectsClient({
       }
       if (staffId && p.staff_id !== staffId) return false;
       if (status && p.status !== status) return false;
-      if (year && p.start_date.slice(0, 4) !== year) return false;
-      if (month && p.start_date.slice(5, 7) !== month) return false;
+      if (monthTab !== "all" && p.start_date.slice(0, 7) !== monthTab) return false;
       return true;
     });
-  }, [projects, keyword, staffId, status, year, month]);
+  }, [projects, keyword, staffId, status, monthTab]);
 
   const totals = useMemo(() => {
     return filtered.reduce(
@@ -58,6 +62,34 @@ export function ProjectsClient({
 
   return (
     <div className="flex flex-col gap-4">
+      <div className="flex flex-wrap gap-1 border-b border-slate-200">
+        <button
+          type="button"
+          onClick={() => setMonthTab("all")}
+          className={`-mb-px border-b-2 px-4 py-2 text-sm font-medium ${
+            monthTab === "all"
+              ? "border-slate-900 text-slate-900"
+              : "border-transparent text-slate-500 hover:text-slate-700"
+          }`}
+        >
+          全て
+        </button>
+        {monthTabs.map((m) => (
+          <button
+            key={m}
+            type="button"
+            onClick={() => setMonthTab(m)}
+            className={`-mb-px border-b-2 px-4 py-2 text-sm font-medium whitespace-nowrap ${
+              monthTab === m
+                ? "border-slate-900 text-slate-900"
+                : "border-transparent text-slate-500 hover:text-slate-700"
+            }`}
+          >
+            {spansMultipleYears ? `${m.slice(0, 4)}年${Number(m.slice(5, 7))}月` : `${Number(m.slice(5, 7))}月`}
+          </button>
+        ))}
+      </div>
+
       <div className="flex flex-wrap items-end justify-between gap-4">
         <div className="flex flex-wrap items-end gap-3">
           <div className="flex flex-col gap-1">
@@ -95,36 +127,6 @@ export function ProjectsClient({
               <option value="進行中">進行中</option>
               <option value="完了">完了</option>
               <option value="中止">中止</option>
-            </select>
-          </div>
-          <div className="flex flex-col gap-1">
-            <label className="text-xs font-medium text-slate-500">年</label>
-            <select
-              value={year}
-              onChange={(e) => setYear(e.target.value)}
-              className="rounded-md border border-slate-300 px-3 py-1.5 text-sm"
-            >
-              <option value="">すべて</option>
-              {years.map((y) => (
-                <option key={y} value={y}>
-                  {y}年
-                </option>
-              ))}
-            </select>
-          </div>
-          <div className="flex flex-col gap-1">
-            <label className="text-xs font-medium text-slate-500">月</label>
-            <select
-              value={month}
-              onChange={(e) => setMonth(e.target.value)}
-              className="rounded-md border border-slate-300 px-3 py-1.5 text-sm"
-            >
-              <option value="">すべて</option>
-              {Array.from({ length: 12 }, (_, i) => String(i + 1).padStart(2, "0")).map((m) => (
-                <option key={m} value={m}>
-                  {Number(m)}月
-                </option>
-              ))}
             </select>
           </div>
         </div>
