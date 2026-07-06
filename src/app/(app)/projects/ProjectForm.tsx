@@ -1,8 +1,9 @@
 "use client";
 
-import { useActionState } from "react";
+import { useActionState, useState } from "react";
 import Link from "next/link";
 import type { Profile, Project } from "@/types/database";
+import { formatCurrency } from "@/lib/format";
 
 type Action = (
   prevState: { error: string } | null,
@@ -21,6 +22,8 @@ export function ProjectForm({
   submitLabel: string;
 }) {
   const [state, formAction, pending] = useActionState(action, null);
+  const [unitPrice, setUnitPrice] = useState(project?.unit_price ?? 0);
+  const [quantity, setQuantity] = useState(project?.quantity ?? 0);
 
   return (
     <form action={formAction} className="flex max-w-xl flex-col gap-4">
@@ -89,32 +92,57 @@ export function ProjectForm({
 
       <div className="grid grid-cols-2 gap-4">
         <div className="flex flex-col gap-1">
-          <label htmlFor="budget" className="text-sm font-medium text-slate-700">
-            予算（目標売上・円） <span className="text-red-500">*</span>
+          <label htmlFor="unit_price" className="text-sm font-medium text-slate-700">
+            単価（円） <span className="text-red-500">*</span>
           </label>
           <input
-            id="budget"
-            name="budget"
+            id="unit_price"
+            name="unit_price"
             type="number"
             min={0}
             required
-            defaultValue={project?.budget ?? 0}
+            value={unitPrice}
+            onChange={(e) => setUnitPrice(Number(e.target.value))}
             className="rounded-md border border-slate-300 px-3 py-2 text-sm focus:border-slate-500 focus:outline-none"
           />
         </div>
         <div className="flex flex-col gap-1">
-          <label htmlFor="actual" className="text-sm font-medium text-slate-700">
-            実績（円）
+          <label htmlFor="quantity" className="text-sm font-medium text-slate-700">
+            件数 <span className="text-red-500">*</span>
           </label>
           <input
-            id="actual"
-            name="actual"
+            id="quantity"
+            name="quantity"
             type="number"
             min={0}
-            defaultValue={project?.actual ?? 0}
+            step={1}
+            required
+            value={quantity}
+            onChange={(e) => setQuantity(Number(e.target.value))}
             className="rounded-md border border-slate-300 px-3 py-2 text-sm focus:border-slate-500 focus:outline-none"
           />
         </div>
+      </div>
+
+      <div className="rounded-md bg-slate-50 px-3 py-2 text-sm text-slate-600">
+        予算（目標売上・自動計算）：
+        <span className="ml-1 font-semibold text-slate-900">
+          {formatCurrency((Number.isFinite(unitPrice) ? unitPrice : 0) * (Number.isFinite(quantity) ? quantity : 0))}
+        </span>
+      </div>
+
+      <div className="flex flex-col gap-1">
+        <label htmlFor="actual" className="text-sm font-medium text-slate-700">
+          実績（円）
+        </label>
+        <input
+          id="actual"
+          name="actual"
+          type="number"
+          min={0}
+          defaultValue={project?.actual ?? 0}
+          className="rounded-md border border-slate-300 px-3 py-2 text-sm focus:border-slate-500 focus:outline-none"
+        />
       </div>
 
       <div className="flex flex-col gap-1">

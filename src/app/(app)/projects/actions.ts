@@ -13,7 +13,8 @@ function parseProjectForm(formData: FormData) {
   const staffId = String(formData.get("staff_id") ?? "").trim();
   const startDate = String(formData.get("start_date") ?? "").trim();
   const endDate = String(formData.get("end_date") ?? "").trim();
-  const budget = Number(formData.get("budget") ?? 0);
+  const unitPrice = Number(formData.get("unit_price") ?? 0);
+  const quantity = Number(formData.get("quantity") ?? 0);
   const actual = Number(formData.get("actual") ?? 0);
   const status = String(formData.get("status") ?? "進行中") as ProjectStatus;
   const notes = String(formData.get("notes") ?? "").trim();
@@ -21,8 +22,10 @@ function parseProjectForm(formData: FormData) {
   if (!name) return { ok: false, error: "案件名は必須です。" } as const;
   if (!startDate) return { ok: false, error: "開始日は必須です。" } as const;
   if (!staffId) return { ok: false, error: "担当者を選択してください。" } as const;
-  if (Number.isNaN(budget) || budget < 0)
-    return { ok: false, error: "予算は0以上の数値で入力してください。" } as const;
+  if (Number.isNaN(unitPrice) || unitPrice < 0)
+    return { ok: false, error: "単価は0以上の数値で入力してください。" } as const;
+  if (!Number.isInteger(quantity) || quantity < 0)
+    return { ok: false, error: "件数は0以上の整数で入力してください。" } as const;
 
   return {
     ok: true,
@@ -31,7 +34,8 @@ function parseProjectForm(formData: FormData) {
       staff_id: staffId,
       start_date: startDate,
       end_date: endDate || null,
-      budget,
+      unit_price: unitPrice,
+      quantity,
       actual: Number.isNaN(actual) ? 0 : actual,
       status,
       notes: notes || null,
