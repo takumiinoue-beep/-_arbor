@@ -24,6 +24,7 @@ export function ProjectForm({
   const [state, formAction, pending] = useActionState(action, null);
   const [unitPrice, setUnitPrice] = useState(project?.unit_price ?? 0);
   const [quantity, setQuantity] = useState(project?.quantity ?? 0);
+  const [actualQuantity, setActualQuantity] = useState(project?.actual_quantity ?? 0);
 
   return (
     <form action={formAction} className="flex max-w-xl flex-col gap-4">
@@ -132,17 +133,29 @@ export function ProjectForm({
       </div>
 
       <div className="flex flex-col gap-1">
-        <label htmlFor="actual" className="text-sm font-medium text-slate-700">
-          実績（円）
+        <label htmlFor="actual_quantity" className="text-sm font-medium text-slate-700">
+          実績件数
         </label>
         <input
-          id="actual"
-          name="actual"
+          id="actual_quantity"
+          name="actual_quantity"
           type="number"
           min={0}
-          defaultValue={project?.actual ?? 0}
+          step={1}
+          value={actualQuantity}
+          onChange={(e) => setActualQuantity(Number(e.target.value))}
           className="rounded-md border border-slate-300 px-3 py-2 text-sm focus:border-slate-500 focus:outline-none"
         />
+      </div>
+
+      <div className="rounded-md bg-slate-50 px-3 py-2 text-sm text-slate-600">
+        実績（自動計算）：
+        <span className="ml-1 font-semibold text-slate-900">
+          {formatCurrency(
+            (Number.isFinite(unitPrice) ? unitPrice : 0) *
+              (Number.isFinite(actualQuantity) ? actualQuantity : 0)
+          )}
+        </span>
       </div>
 
       <div className="flex flex-col gap-1">

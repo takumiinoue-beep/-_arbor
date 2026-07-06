@@ -5,9 +5,19 @@ import { useRouter } from "next/navigation";
 import { formatCurrency } from "@/lib/format";
 import { updateActual } from "./actions";
 
-export function ActualEditor({ projectId, actual }: { projectId: string; actual: number }) {
+export function ActualEditor({
+  projectId,
+  actual,
+  actualQuantity,
+  unitPrice,
+}: {
+  projectId: string;
+  actual: number;
+  actualQuantity: number;
+  unitPrice: number;
+}) {
   const [editing, setEditing] = useState(false);
-  const [value, setValue] = useState(String(actual));
+  const [value, setValue] = useState(String(actualQuantity));
   const [error, setError] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
   const router = useRouter();
@@ -17,40 +27,46 @@ export function ActualEditor({ projectId, actual }: { projectId: string; actual:
       <button
         type="button"
         onClick={() => {
-          setValue(String(actual));
+          setValue(String(actualQuantity));
           setEditing(true);
         }}
         className="rounded px-1 py-0.5 text-left hover:bg-slate-100"
-        title="クリックして実績を更新"
+        title="クリックして実績件数を更新"
       >
         {formatCurrency(actual)}
+        <span className="ml-1 text-xs text-slate-400">({actualQuantity}件)</span>
       </button>
     );
   }
+
+  const previewQuantity = Number(value);
+  const previewValid = Number.isInteger(previewQuantity) && previewQuantity >= 0;
 
   return (
     <div className="flex flex-col gap-1">
       <div className="flex items-center gap-1">
         <input
           type="number"
+          min={0}
+          step={1}
           autoFocus
           value={value}
           onChange={(e) => setValue(e.target.value)}
-          className="w-28 rounded border border-slate-300 px-1.5 py-0.5 text-sm"
+          className="w-20 rounded border border-slate-300 px-1.5 py-0.5 text-sm"
         />
+        <span className="text-xs text-slate-400">件</span>
         <button
           type="button"
           disabled={pending}
           onClick={() => {
-            const newActual = Number(value);
-            if (Number.isNaN(newActual) || newActual < 0) {
-              setError("正しい金額を入力してください");
+            if (!previewValid) {
+              setError("0以上の整数を入力してください");
               return;
             }
             setError(null);
             startTransition(async () => {
               try {
-                await updateActual(projectId, newActual);
+                await updateActual(projectId, previewQuantity);
                 setEditing(false);
                 router.refresh();
               } catch (e) {
@@ -70,6 +86,9 @@ export function ActualEditor({ projectId, actual }: { projectId: string; actual:
           取消
         </button>
       </div>
+      {previewValid && (
+        <p className="text-xs text-slate-400">→ {formatCurrency(unitPrice * previewQuantity)}</p>
+      )}
       {error && <p className="text-xs text-red-600">{error}</p>}
     </div>
   );

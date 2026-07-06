@@ -19,6 +19,7 @@ export type Project = {
   unit_price: number;
   quantity: number;
   budget: number;
+  actual_quantity: number;
   actual: number;
   status: ProjectStatus;
   notes: string | null;

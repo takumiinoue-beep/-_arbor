@@ -1,9 +1,9 @@
 import { requireProfile } from "@/lib/auth";
 import { createClient } from "@/lib/supabase/server";
 import type { ProjectWithStaff } from "@/types/database";
-import { aggregateByStaff } from "@/lib/aggregate";
+import { aggregateByStaff, projectsGroupedByStaff, computeStaffGroupBands } from "@/lib/aggregate";
 import { formatCurrency, formatPercent } from "@/lib/format";
-import { BudgetActualBarChart } from "@/components/charts/BudgetActualBarChart";
+import { StaffGroupedProjectBarChart } from "@/components/charts/StaffGroupedProjectBarChart";
 
 export default async function StaffSummaryPage() {
   await requireProfile();
@@ -13,17 +13,17 @@ export default async function StaffSummaryPage() {
     .from("projects")
     .select("*, staff:profiles!projects_staff_id_fkey(id, name)");
 
-  const staffAgg = aggregateByStaff((projects as ProjectWithStaff[]) ?? []);
+  const projectList = (projects as ProjectWithStaff[]) ?? [];
+  const staffAgg = aggregateByStaff(projectList);
+  const staffProjectRows = projectsGroupedByStaff(projectList);
+  const staffGroupBands = computeStaffGroupBands(staffProjectRows);
 
   return (
     <div className="flex flex-col gap-6">
       <h1 className="text-lg font-bold text-slate-900">担当者別集計</h1>
 
       <div className="rounded-lg border border-slate-200 bg-white p-4">
-        <BudgetActualBarChart
-          data={staffAgg.map((s) => ({ staffName: s.staffName, budget: s.budget, actual: s.actual }))}
-          nameKey="staffName"
-        />
+        <StaffGroupedProjectBarChart data={staffProjectRows} bands={staffGroupBands} />
       </div>
 
       <div className="overflow-x-auto rounded-lg border border-slate-200 bg-white">

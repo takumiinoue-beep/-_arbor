@@ -172,7 +172,12 @@ export function ProjectsClient({
                   </td>
                   <td className="px-3 py-2 text-right">
                     {canEditActual ? (
-                      <ActualEditor projectId={p.id} actual={p.actual} />
+                      <ActualEditor
+                        projectId={p.id}
+                        actual={p.actual}
+                        actualQuantity={p.actual_quantity}
+                        unitPrice={p.unit_price}
+                      />
                     ) : (
                       formatCurrency(p.actual)
                     )}

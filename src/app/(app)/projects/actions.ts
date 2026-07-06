@@ -15,7 +15,7 @@ function parseProjectForm(formData: FormData) {
   const endDate = String(formData.get("end_date") ?? "").trim();
   const unitPrice = Number(formData.get("unit_price") ?? 0);
   const quantity = Number(formData.get("quantity") ?? 0);
-  const actual = Number(formData.get("actual") ?? 0);
+  const actualQuantity = Number(formData.get("actual_quantity") ?? 0);
   const status = String(formData.get("status") ?? "進行中") as ProjectStatus;
   const notes = String(formData.get("notes") ?? "").trim();
 
@@ -26,6 +26,8 @@ function parseProjectForm(formData: FormData) {
     return { ok: false, error: "単価は0以上の数値で入力してください。" } as const;
   if (!Number.isInteger(quantity) || quantity < 0)
     return { ok: false, error: "件数は0以上の整数で入力してください。" } as const;
+  if (!Number.isInteger(actualQuantity) || actualQuantity < 0)
+    return { ok: false, error: "実績件数は0以上の整数で入力してください。" } as const;
 
   return {
     ok: true,
@@ -36,7 +38,7 @@ function parseProjectForm(formData: FormData) {
       end_date: endDate || null,
       unit_price: unitPrice,
       quantity,
-      actual: Number.isNaN(actual) ? 0 : actual,
+      actual_quantity: actualQuantity,
       status,
       notes: notes || null,
     },
@@ -90,12 +92,12 @@ export async function deleteProject(id: string) {
   revalidatePath("/dashboard");
 }
 
-export async function updateActual(projectId: string, newActual: number) {
+export async function updateActual(projectId: string, newQuantity: number) {
   await requireProfile();
   const supabase = await createClient();
   const { error } = await supabase.rpc("update_project_actual", {
     p_project_id: projectId,
-    p_new_actual: newActual,
+    p_new_quantity: newQuantity,
   });
 
   if (error) throw new Error(error.message);
