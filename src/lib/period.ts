@@ -65,3 +65,23 @@ export function filterByPeriod<T>(
     return true;
   });
 }
+
+// "YYYY-MM" を指定して、その月ちょうどの [start, end) 範囲を返す（過去期間タブの月選択用）
+export function getExactMonthRange(yearMonth: string): { start: string; end: string } {
+  const year = Number(yearMonth.slice(0, 4));
+  const month = Number(yearMonth.slice(5, 7));
+  const next = shiftMonth(year, month, 1);
+  return { start: monthStart(year, month), end: monthStart(next.year, next.month) };
+}
+
+export function filterByExactMonth<T>(rows: T[], yearMonth: string, getDate: (row: T) => string): T[] {
+  const { start, end } = getExactMonthRange(yearMonth);
+  return rows.filter((row) => {
+    const dateKey = getDate(row);
+    return dateKey >= start && dateKey < end;
+  });
+}
+
+export function formatYearMonth(yearMonth: string): string {
+  return `${yearMonth.slice(0, 4)}年${Number(yearMonth.slice(5, 7))}月`;
+}

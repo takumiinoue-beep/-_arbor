@@ -4,7 +4,13 @@ import { useMemo, useState } from "react";
 import type { FixedCost, ProjectWithStaff } from "@/types/database";
 import { aggregateByStaff, aggregateByMonth, sumBudget, sumActual } from "@/lib/aggregate";
 import { formatCurrency, formatPercent } from "@/lib/format";
-import { PERIOD_TABS, filterByPeriod, type PeriodTab } from "@/lib/period";
+import {
+  PERIOD_TABS,
+  filterByPeriod,
+  filterByExactMonth,
+  formatYearMonth,
+  type PeriodTab,
+} from "@/lib/period";
 import { SummaryCard } from "@/components/SummaryCard";
 import { BudgetActualBarChart } from "@/components/charts/BudgetActualBarChart";
 import { MonthlyLineChart } from "@/components/charts/MonthlyLineChart";
@@ -20,14 +26,34 @@ export function DashboardClient({
 }) {
   const [tab, setTab] = useState<PeriodTab>("this_month");
 
-  const filteredProjects = useMemo(
-    () => filterByPeriod(projects, tab, todayISO, (p) => p.start_date),
-    [projects, tab, todayISO]
-  );
-  const filteredFixedCosts = useMemo(
-    () => filterByPeriod(fixedCosts, tab, todayISO, (f) => f.target_month),
-    [fixedCosts, tab, todayISO]
-  );
+  const currentMonthKey = todayISO.slice(0, 7);
+  const pastMonths = useMemo(() => {
+    const set = new Set(projects.map((p) => p.start_date.slice(0, 7)));
+    return Array.from(set)
+      .filter((m) => m < currentMonthKey)
+      .sort()
+      .reverse();
+  }, [projects, currentMonthKey]);
+
+  const [selectedPastMonth, setSelectedPastMonth] = useState(() => pastMonths[0] ?? "");
+
+  const isPastTab = tab === "past";
+
+  const filteredProjects = useMemo(() => {
+    if (isPastTab) {
+      if (!selectedPastMonth) return [];
+      return filterByExactMonth(projects, selectedPastMonth, (p) => p.start_date);
+    }
+    return filterByPeriod(projects, tab, todayISO, (p) => p.start_date);
+  }, [projects, tab, todayISO, isPastTab, selectedPastMonth]);
+
+  const filteredFixedCosts = useMemo(() => {
+    if (isPastTab) {
+      if (!selectedPastMonth) return [];
+      return filterByExactMonth(fixedCosts, selectedPastMonth, (f) => f.target_month);
+    }
+    return filterByPeriod(fixedCosts, tab, todayISO, (f) => f.target_month);
+  }, [fixedCosts, tab, todayISO, isPastTab, selectedPastMonth]);
 
   const budget = sumBudget(filteredProjects);
   const actual = sumActual(filteredProjects);
@@ -60,6 +86,27 @@ export function DashboardClient({
           </button>
         ))}
       </div>
+
+      {isPastTab && (
+        <div className="flex items-center gap-2">
+          <label className="text-xs font-medium text-slate-500">対象月</label>
+          {pastMonths.length > 0 ? (
+            <select
+              value={selectedPastMonth}
+              onChange={(e) => setSelectedPastMonth(e.target.value)}
+              className="rounded-md border border-slate-300 px-3 py-1.5 text-sm"
+            >
+              {pastMonths.map((m) => (
+                <option key={m} value={m}>
+                  {formatYearMonth(m)}
+                </option>
+              ))}
+            </select>
+          ) : (
+            <span className="text-sm text-slate-400">過去の案件データがありません</span>
+          )}
+        </div>
+      )}
 
       <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-5">
         <SummaryCard label="予算合計" value={formatCurrency(budget)} />
