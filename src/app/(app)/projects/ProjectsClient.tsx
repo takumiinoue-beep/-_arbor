@@ -174,7 +174,6 @@ export function ProjectsClient({
                     {canEditActual ? (
                       <ActualEditor
                         projectId={p.id}
-                        actual={p.actual}
                         actualQuantity={p.actual_quantity}
                         unitPrice={p.unit_price}
                       />
