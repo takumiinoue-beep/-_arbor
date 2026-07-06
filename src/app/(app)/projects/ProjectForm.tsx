@@ -22,9 +22,13 @@ export function ProjectForm({
   submitLabel: string;
 }) {
   const [state, formAction, pending] = useActionState(action, null);
-  const [unitPrice, setUnitPrice] = useState(project?.unit_price ?? 0);
-  const [quantity, setQuantity] = useState(project?.quantity ?? 0);
-  const [actualQuantity, setActualQuantity] = useState(project?.actual_quantity ?? 0);
+  const [unitPrice, setUnitPrice] = useState(project ? String(project.unit_price) : "");
+  const [quantity, setQuantity] = useState(project ? String(project.quantity) : "");
+  const [actualQuantity, setActualQuantity] = useState(project ? String(project.actual_quantity) : "0");
+
+  const unitPriceNum = Number(unitPrice) || 0;
+  const quantityNum = Number(quantity) || 0;
+  const actualQuantityNum = Number(actualQuantity) || 0;
 
   return (
     <form action={formAction} className="flex max-w-xl flex-col gap-4">
@@ -103,7 +107,7 @@ export function ProjectForm({
             min={0}
             required
             value={unitPrice}
-            onChange={(e) => setUnitPrice(Number(e.target.value))}
+            onChange={(e) => setUnitPrice(e.target.value)}
             className="rounded-md border border-slate-300 px-3 py-2 text-sm focus:border-slate-500 focus:outline-none"
           />
         </div>
@@ -119,7 +123,7 @@ export function ProjectForm({
             step={1}
             required
             value={quantity}
-            onChange={(e) => setQuantity(Number(e.target.value))}
+            onChange={(e) => setQuantity(e.target.value)}
             className="rounded-md border border-slate-300 px-3 py-2 text-sm focus:border-slate-500 focus:outline-none"
           />
         </div>
@@ -128,7 +132,7 @@ export function ProjectForm({
       <div className="rounded-md bg-slate-50 px-3 py-2 text-sm text-slate-600">
         予算（目標売上・自動計算）：
         <span className="ml-1 font-semibold text-slate-900">
-          {formatCurrency((Number.isFinite(unitPrice) ? unitPrice : 0) * (Number.isFinite(quantity) ? quantity : 0))}
+          {formatCurrency(unitPriceNum * quantityNum)}
         </span>
       </div>
 
@@ -143,7 +147,7 @@ export function ProjectForm({
           min={0}
           step={1}
           value={actualQuantity}
-          onChange={(e) => setActualQuantity(Number(e.target.value))}
+          onChange={(e) => setActualQuantity(e.target.value)}
           className="rounded-md border border-slate-300 px-3 py-2 text-sm focus:border-slate-500 focus:outline-none"
         />
       </div>
@@ -151,10 +155,7 @@ export function ProjectForm({
       <div className="rounded-md bg-slate-50 px-3 py-2 text-sm text-slate-600">
         実績（自動計算）：
         <span className="ml-1 font-semibold text-slate-900">
-          {formatCurrency(
-            (Number.isFinite(unitPrice) ? unitPrice : 0) *
-              (Number.isFinite(actualQuantity) ? actualQuantity : 0)
-          )}
+          {formatCurrency(unitPriceNum * actualQuantityNum)}
         </span>
       </div>
 
