@@ -92,6 +92,27 @@ export async function deleteProject(id: string) {
   revalidatePath("/dashboard");
 }
 
+export async function updateQuantity(projectId: string, newQuantity: number) {
+  await requireAdmin();
+
+  if (!Number.isInteger(newQuantity) || newQuantity < 0) {
+    throw new Error("件数は0以上の整数で入力してください。");
+  }
+
+  const supabase = await createClient();
+  const { error } = await supabase
+    .from("projects")
+    .update({ quantity: newQuantity })
+    .eq("id", projectId);
+
+  if (error) throw new Error(error.message);
+
+  revalidatePath("/projects");
+  revalidatePath("/dashboard");
+  revalidatePath("/staff-summary");
+  revalidatePath("/charts");
+}
+
 export async function updateActual(projectId: string, newQuantity: number) {
   await requireProfile();
   const supabase = await createClient();

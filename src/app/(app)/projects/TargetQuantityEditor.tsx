@@ -1,23 +1,23 @@
 "use client";
 
 import { InlineQuantityEditor } from "./InlineQuantityEditor";
-import { updateActual } from "./actions";
+import { updateQuantity } from "./actions";
 
-export function ActualEditor({
+export function TargetQuantityEditor({
   projectId,
-  actualQuantity,
+  quantity,
   unitPrice,
 }: {
   projectId: string;
-  actualQuantity: number;
+  quantity: number;
   unitPrice: number;
 }) {
   return (
     <InlineQuantityEditor
       projectId={projectId}
-      quantity={actualQuantity}
+      quantity={quantity}
       unitPrice={unitPrice}
-      onSave={updateActual}
+      onSave={updateQuantity}
     />
   );
 }

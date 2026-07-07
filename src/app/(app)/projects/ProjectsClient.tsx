@@ -5,6 +5,7 @@ import Link from "next/link";
 import type { Profile, ProjectStatus, ProjectWithStaff } from "@/types/database";
 import { formatCurrency, formatPercent } from "@/lib/format";
 import { ActualEditor } from "./ActualEditor";
+import { TargetQuantityEditor } from "./TargetQuantityEditor";
 import { DeleteProjectButton } from "./DeleteProjectButton";
 
 export function ProjectsClient({
@@ -169,8 +170,19 @@ export function ProjectsClient({
                     {p.start_date}
                     {p.end_date ? ` ～ ${p.end_date}` : ""}
                   </td>
-                  <td className="px-3 py-2 text-right text-slate-700">
-                    {formatCurrency(p.budget)}
+                  <td className="px-3 py-2 text-right">
+                    {isAdmin ? (
+                      <TargetQuantityEditor
+                        projectId={p.id}
+                        quantity={p.quantity}
+                        unitPrice={p.unit_price}
+                      />
+                    ) : (
+                      <span className="text-slate-700">
+                        {formatCurrency(p.budget)}
+                        <span className="ml-1 text-xs text-slate-400">({p.quantity}件)</span>
+                      </span>
+                    )}
                   </td>
                   <td className="px-3 py-2 text-right">
                     {canEditActual ? (
@@ -180,7 +192,10 @@ export function ProjectsClient({
                         unitPrice={p.unit_price}
                       />
                     ) : (
-                      formatCurrency(p.actual)
+                      <span className="text-slate-700">
+                        {formatCurrency(p.actual)}
+                        <span className="ml-1 text-xs text-slate-400">({p.actual_quantity}件)</span>
+                      </span>
                     )}
                   </td>
                   <td
