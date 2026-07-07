@@ -10,6 +10,13 @@ const navItems = [
   { href: "/fixed-costs", label: "固定費管理" },
 ];
 
+const adminNavItems = [
+  { href: "/staff", label: "担当者管理" },
+  { href: "/invoices/issue", label: "請求書発行" },
+  { href: "/invoices/clients", label: "取引先" },
+  { href: "/invoices/company", label: "自社情報" },
+];
+
 export default async function AppLayout({ children }: { children: React.ReactNode }) {
   const profile = await requireProfile();
 
@@ -29,14 +36,16 @@ export default async function AppLayout({ children }: { children: React.ReactNod
                   {item.label}
                 </Link>
               ))}
-              {profile.role === "admin" && (
-                <Link
-                  href="/staff"
-                  className="rounded-md px-3 py-1.5 text-sm text-slate-600 hover:bg-slate-100 hover:text-slate-900"
-                >
-                  担当者管理
-                </Link>
-              )}
+              {profile.role === "admin" &&
+                adminNavItems.map((item) => (
+                  <Link
+                    key={item.href}
+                    href={item.href}
+                    className="rounded-md px-3 py-1.5 text-sm text-slate-600 hover:bg-slate-100 hover:text-slate-900"
+                  >
+                    {item.label}
+                  </Link>
+                ))}
             </nav>
           </div>
 

@@ -43,3 +43,6 @@ next-env.d.ts
 
 # claude code local settings
 .claude/
+
+# 移植済みの参照用ソース（他プロジェクトからのコピー元。移植先が正）
+/スクラッチパッド/

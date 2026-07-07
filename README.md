@@ -19,11 +19,13 @@
 - 担当者別集計画面
 - グラフ画面（担当者別・案件別・月別推移・実績構成比）
 - 固定費管理（品目・金額・発生周期・合計自動集計）
+- 請求書発行（請求書番号自動生成、明細入力、リアルタイムプレビュー、ブラウザ印刷によるPDF出力、発行済一覧、入金ステータス管理、インボイス制度対応）
+- 取引先マスタ・自社情報（会社情報・自社銀行口座）管理
 
 ## 権限
 
-- **管理者**：担当者・案件・固定費の全操作（登録／編集／削除）が可能
-- **担当者**：全案件の予算・実績を閲覧可能。実績の入力・更新は自分が担当する案件のみ可能
+- **管理者**：担当者・案件・固定費・請求書関連（取引先／自社情報／請求書発行）の全操作（登録／編集／削除）が可能
+- **担当者**：全案件の予算・実績を閲覧可能。実績の入力・更新は自分が担当する案件のみ可能。請求書関連機能へはアクセス不可
 
 ## セットアップ手順
 
@@ -41,15 +43,15 @@
 
 ### 2. スキーマを適用
 
-Supabaseダッシュボードの「SQL Editor」で [`supabase/migrations/0001_init.sql`](supabase/migrations/0001_init.sql) の内容を実行してください。
+Supabaseダッシュボードの「SQL Editor」で、`supabase/migrations/` 配下のSQLを**番号順に**実行してください。
 （`supabase` CLIをリンク済みであれば `supabase db push` でも可）
 
-作成されるもの：
-- `profiles`（担当者マスタ兼ログインユーザー）
-- `projects`（案件）
-- `actual_logs`（実績更新履歴）
-- `fixed_costs`（固定費）
-- RLS（Row Level Security）ポリシーと、実績更新用のRPC関数 `update_project_actual`
+| ファイル | 内容 |
+|---|---|
+| [`0001_init.sql`](supabase/migrations/0001_init.sql) | `profiles`（担当者マスタ兼ログインユーザー）／`projects`（案件）／`actual_logs`（実績更新履歴）／`fixed_costs`（固定費）とRLS、実績更新用RPC `update_project_actual` |
+| [`0002_project_budget_from_unit_price.sql`](supabase/migrations/0002_project_budget_from_unit_price.sql) | 予算（目標売上）を単価×件数の自動計算に変更 |
+| [`0003_actual_from_quantity.sql`](supabase/migrations/0003_actual_from_quantity.sql) | 実績を単価×実績件数の自動計算に変更、RPC更新 |
+| [`0004_invoices.sql`](supabase/migrations/0004_invoices.sql) | 請求書発行機能（`clients`／`company_bank_accounts`／`company_settings`／`invoices_issued`／`invoice_items`）とRLS（管理者のみ） |
 
 ### 3. 環境変数を設定
 

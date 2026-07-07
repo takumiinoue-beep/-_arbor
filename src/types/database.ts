@@ -51,3 +51,69 @@ export type FixedCost = {
   created_at: string;
 };
 
+export type ClientType = "customer" | "supplier" | "other";
+export type InvoiceStatus = "unpaid" | "paid";
+
+export type Client = {
+  id: number;
+  name: string;
+  type: ClientType;
+  address: string | null;
+  postal_code: string | null;
+  created_at: string;
+};
+
+export type CompanyBankAccount = {
+  id: number;
+  bank_name: string;
+  bank_branch: string | null;
+  account_type: string | null;
+  account_number: string | null;
+  account_holder: string | null;
+  created_at: string;
+};
+
+export type CompanySettings = {
+  id: number;
+  company_name: string | null;
+  representative: string | null;
+  address: string | null;
+  invoice_number: string | null;
+  created_at: string;
+};
+
+export type InvoiceItem = {
+  id: number;
+  invoice_id: number;
+  description: string | null;
+  quantity: number | null;
+  unit_price: number | null;
+  tax_rate: number | null;
+  amount: number | null;
+  unit: string | null;
+  created_at: string;
+};
+
+export type InvoiceIssued = {
+  id: number;
+  invoice_number: string | null;
+  date: string | null;
+  due_date: string | null;
+  subject: string | null;
+  client_id: number | null;
+  client_name: string | null;
+  company_bank_account_id: number | null;
+  bank_account_id: number | null;
+  subtotal: number;
+  tax_8: number;
+  tax_10: number;
+  total: number;
+  notes: string | null;
+  status: InvoiceStatus;
+  is_deleted: boolean;
+  dencho_saved_at: string | null;
+  journal_id: number | null;
+  paid_date: string | null;
+  created_at: string;
+};
+
