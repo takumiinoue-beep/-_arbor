@@ -2,7 +2,7 @@
 
 import { useActionState, useState } from "react";
 import Link from "next/link";
-import type { Profile, Project } from "@/types/database";
+import type { PriceRate, Profile, Project } from "@/types/database";
 import { formatCurrency } from "@/lib/format";
 
 type Action = (
@@ -10,14 +10,30 @@ type Action = (
   formData: FormData
 ) => Promise<{ error: string } | null>;
 
+function findPriceRate(
+  priceRates: PriceRate[],
+  position: string,
+  employeeCount: number | null
+): PriceRate | undefined {
+  if (!position || employeeCount === null || Number.isNaN(employeeCount)) return undefined;
+  return priceRates.find(
+    (r) =>
+      r.position === position &&
+      employeeCount >= r.employee_min &&
+      (r.employee_max === null || employeeCount <= r.employee_max)
+  );
+}
+
 export function ProjectForm({
   action,
   staffList,
+  priceRates,
   project,
   submitLabel,
 }: {
   action: Action;
   staffList: Profile[];
+  priceRates: PriceRate[];
   project?: Project;
   submitLabel: string;
 }) {
@@ -25,10 +41,26 @@ export function ProjectForm({
   const [unitPrice, setUnitPrice] = useState(project ? String(project.unit_price) : "");
   const [quantity, setQuantity] = useState(project ? String(project.quantity) : "");
   const [actualQuantity, setActualQuantity] = useState(project ? String(project.actual_quantity) : "0");
+  const [clientPosition, setClientPosition] = useState(project?.client_position ?? "");
+  const [clientEmployeeCount, setClientEmployeeCount] = useState(
+    project?.client_employee_count != null ? String(project.client_employee_count) : ""
+  );
 
   const unitPriceNum = Number(unitPrice) || 0;
   const quantityNum = Number(quantity) || 0;
   const actualQuantityNum = Number(actualQuantity) || 0;
+
+  const positionOptions = Array.from(new Set(priceRates.map((r) => r.position)));
+  const matchedRate = findPriceRate(
+    priceRates,
+    clientPosition,
+    clientEmployeeCount === "" ? null : Number(clientEmployeeCount)
+  );
+
+  function applyMatch(position: string, employeeCountStr: string) {
+    const match = findPriceRate(priceRates, position, employeeCountStr === "" ? null : Number(employeeCountStr));
+    if (match) setUnitPrice(String(match.unit_price));
+  }
 
   return (
     <form action={formAction} className="flex max-w-xl flex-col gap-4">
@@ -94,6 +126,57 @@ export function ProjectForm({
           />
         </div>
       </div>
+
+      <div className="grid grid-cols-2 gap-4">
+        <div className="flex flex-col gap-1">
+          <label htmlFor="client_position" className="text-sm font-medium text-slate-700">
+            取引先担当者の役職
+          </label>
+          <input
+            id="client_position"
+            name="client_position"
+            list="client-position-options"
+            value={clientPosition}
+            onChange={(e) => {
+              setClientPosition(e.target.value);
+              applyMatch(e.target.value, clientEmployeeCount);
+            }}
+            placeholder="例：部長"
+            className="rounded-md border border-slate-300 px-3 py-2 text-sm focus:border-slate-500 focus:outline-none"
+          />
+          <datalist id="client-position-options">
+            {positionOptions.map((p) => (
+              <option key={p} value={p} />
+            ))}
+          </datalist>
+        </div>
+        <div className="flex flex-col gap-1">
+          <label htmlFor="client_employee_count" className="text-sm font-medium text-slate-700">
+            取引先企業の従業員数
+          </label>
+          <input
+            id="client_employee_count"
+            name="client_employee_count"
+            type="number"
+            min={0}
+            step={1}
+            value={clientEmployeeCount}
+            onChange={(e) => {
+              setClientEmployeeCount(e.target.value);
+              applyMatch(clientPosition, e.target.value);
+            }}
+            className="rounded-md border border-slate-300 px-3 py-2 text-sm focus:border-slate-500 focus:outline-none"
+          />
+        </div>
+      </div>
+
+      {(clientPosition || clientEmployeeCount) && (
+        <p className="-mt-2 text-xs text-slate-400">
+          {matchedRate
+            ? `料金表に一致：${formatCurrency(matchedRate.unit_price)}（単価欄に自動入力済み。手動で上書きできます）`
+            : "該当する料金表がありません。単価は手動で入力してください。"}
+        </p>
+      )}
 
       <div className="grid grid-cols-2 gap-4">
         <div className="flex flex-col gap-1">

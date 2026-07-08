@@ -18,6 +18,8 @@ function parseProjectForm(formData: FormData) {
   const actualQuantity = Number(formData.get("actual_quantity") ?? 0);
   const status = String(formData.get("status") ?? "進行中") as ProjectStatus;
   const notes = String(formData.get("notes") ?? "").trim();
+  const clientPosition = String(formData.get("client_position") ?? "").trim();
+  const clientEmployeeCountRaw = String(formData.get("client_employee_count") ?? "").trim();
 
   if (!name) return { ok: false, error: "案件名は必須です。" } as const;
   if (!startDate) return { ok: false, error: "開始日は必須です。" } as const;
@@ -28,6 +30,10 @@ function parseProjectForm(formData: FormData) {
     return { ok: false, error: "件数は0以上の整数で入力してください。" } as const;
   if (!Number.isInteger(actualQuantity) || actualQuantity < 0)
     return { ok: false, error: "実績件数は0以上の整数で入力してください。" } as const;
+
+  const clientEmployeeCount = clientEmployeeCountRaw === "" ? null : Number(clientEmployeeCountRaw);
+  if (clientEmployeeCount !== null && (!Number.isInteger(clientEmployeeCount) || clientEmployeeCount < 0))
+    return { ok: false, error: "取引先企業の従業員数は0以上の整数で入力してください。" } as const;
 
   return {
     ok: true,
@@ -41,6 +47,8 @@ function parseProjectForm(formData: FormData) {
       actual_quantity: actualQuantity,
       status,
       notes: notes || null,
+      client_position: clientPosition || null,
+      client_employee_count: clientEmployeeCount,
     },
   } as const;
 }

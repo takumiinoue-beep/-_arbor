@@ -13,9 +13,10 @@ export default async function EditProjectPage({
   const { id } = await params;
   const supabase = await createClient();
 
-  const [{ data: project }, { data: staffList }] = await Promise.all([
+  const [{ data: project }, { data: staffList }, { data: priceRates }] = await Promise.all([
     supabase.from("projects").select("*").eq("id", id).single(),
     supabase.from("profiles").select("*").order("name"),
+    supabase.from("price_rates").select("*").order("position").order("employee_min"),
   ]);
 
   if (!project) notFound();
@@ -28,6 +29,7 @@ export default async function EditProjectPage({
       <ProjectForm
         action={boundAction}
         staffList={staffList ?? []}
+        priceRates={priceRates ?? []}
         project={project}
         submitLabel="更新する"
       />

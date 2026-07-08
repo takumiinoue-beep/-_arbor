@@ -23,6 +23,8 @@ export type Project = {
   actual: number;
   status: ProjectStatus;
   notes: string | null;
+  client_position: string | null;
+  client_employee_count: number | null;
   created_at: string;
   updated_at: string;
   updated_by: string | null;
@@ -48,6 +50,15 @@ export type FixedCost = {
   period_type: PeriodType;
   target_month: string;
   notes: string | null;
+  created_at: string;
+};
+
+export type PriceRate = {
+  id: string;
+  position: string;
+  employee_min: number;
+  employee_max: number | null;
+  unit_price: number;
   created_at: string;
 };
 

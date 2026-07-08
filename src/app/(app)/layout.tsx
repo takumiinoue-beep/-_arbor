@@ -12,6 +12,7 @@ const navItems = [
 
 const adminNavItems = [
   { href: "/staff", label: "担当者管理" },
+  { href: "/price-rates", label: "料金表" },
   { href: "/invoices/issue", label: "請求書発行" },
   { href: "/invoices/clients", label: "取引先" },
   { href: "/invoices/company", label: "自社情報" },
