@@ -150,7 +150,9 @@ export function buildInvoiceHTML(
   <div class="issuer-block">
     <div class="issuer-name">${company?.company_name || ""}</div>
     ${company?.representative ? `<div>${company.representative}</div>` : ""}
+    ${company?.postal_code ? `<div>〒${company.postal_code}</div>` : ""}
     ${company?.address ? `<div>${company.address}</div>` : ""}
+    ${company?.building_name ? `<div>${company.building_name}</div>` : ""}
   </div>
 
   <div class="greeting">下記の通りご請求申し上げます。</div>

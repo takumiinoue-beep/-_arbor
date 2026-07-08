@@ -477,7 +477,7 @@ export function InvoiceIssueClient({
                 <thead className="bg-slate-50">
                   <tr>
                     <th className="px-3 py-2 text-left font-medium text-slate-600">内容</th>
-                    <th className="w-16 px-3 py-2 text-right font-medium text-slate-600">数量</th>
+                    <th className="w-24 px-3 py-2 text-right font-medium text-slate-600">数量</th>
                     <th className="w-28 px-3 py-2 text-right font-medium text-slate-600">単価</th>
                     <th className="w-20 px-3 py-2 text-center font-medium text-slate-600">税率</th>
                     <th className="w-28 px-3 py-2 text-right font-medium text-slate-600">金額</th>

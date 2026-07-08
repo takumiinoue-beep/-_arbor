@@ -94,7 +94,9 @@ export type CompanySettings = {
   id: number;
   company_name: string | null;
   representative: string | null;
+  postal_code: string | null;
   address: string | null;
+  building_name: string | null;
   invoice_number: string | null;
   created_at: string;
 };

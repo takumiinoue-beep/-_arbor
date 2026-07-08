@@ -83,7 +83,9 @@ export function InvoicePreview({
       <div style={S.issuer}>
         <div style={S.issuerName}>{company?.company_name || ""}</div>
         {company?.representative && <div>{company.representative}</div>}
+        {company?.postal_code && <div>〒{company.postal_code}</div>}
         {company?.address && <div>{company.address}</div>}
+        {company?.building_name && <div>{company.building_name}</div>}
       </div>
 
       <div style={S.greeting}>下記の通りご請求申し上げます。</div>

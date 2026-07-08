@@ -15,13 +15,17 @@ export async function saveCompanySettings(
   const id = formData.get("id") ? Number(formData.get("id")) : null;
   const companyName = String(formData.get("company_name") ?? "").trim();
   const representative = String(formData.get("representative") ?? "").trim();
+  const postalCode = String(formData.get("postal_code") ?? "").trim();
   const address = String(formData.get("address") ?? "").trim();
+  const buildingName = String(formData.get("building_name") ?? "").trim();
   const invoiceNumber = String(formData.get("invoice_number") ?? "").trim();
 
   const value = {
     company_name: companyName || null,
     representative: representative || null,
+    postal_code: postalCode || null,
     address: address || null,
+    building_name: buildingName || null,
     invoice_number: invoiceNumber || null,
   };
 

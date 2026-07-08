@@ -30,11 +30,31 @@ export function CompanySettingsForm({ settings }: { settings: CompanySettings | 
         </div>
       </div>
 
+      <div className="flex flex-col gap-1 sm:w-48">
+        <label className="text-sm font-medium text-slate-700">郵便番号</label>
+        <input
+          name="postal_code"
+          defaultValue={settings?.postal_code ?? ""}
+          placeholder="123-4567"
+          className="rounded-md border border-slate-300 px-3 py-2 text-sm"
+        />
+      </div>
+
       <div className="flex flex-col gap-1">
         <label className="text-sm font-medium text-slate-700">住所</label>
         <input
           name="address"
           defaultValue={settings?.address ?? ""}
+          className="rounded-md border border-slate-300 px-3 py-2 text-sm"
+        />
+      </div>
+
+      <div className="flex flex-col gap-1">
+        <label className="text-sm font-medium text-slate-700">建物名</label>
+        <input
+          name="building_name"
+          defaultValue={settings?.building_name ?? ""}
+          placeholder="例：〇〇ビル3F"
           className="rounded-md border border-slate-300 px-3 py-2 text-sm"
         />
       </div>
