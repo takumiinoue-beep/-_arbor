@@ -55,6 +55,7 @@ export type FixedCost = {
 
 export type PriceRate = {
   id: string;
+  project_id: string;
   position: string;
   employee_min: number;
   employee_max: number | null;

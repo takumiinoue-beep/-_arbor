@@ -16,7 +16,7 @@ export default async function EditProjectPage({
   const [{ data: project }, { data: staffList }, { data: priceRates }] = await Promise.all([
     supabase.from("projects").select("*").eq("id", id).single(),
     supabase.from("profiles").select("*").order("name"),
-    supabase.from("price_rates").select("*").order("position").order("employee_min"),
+    supabase.from("price_rates").select("*").eq("project_id", id).order("position").order("employee_min"),
   ]);
 
   if (!project) notFound();

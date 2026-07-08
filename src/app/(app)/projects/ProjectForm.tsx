@@ -10,18 +10,23 @@ type Action = (
   formData: FormData
 ) => Promise<{ error: string } | null>;
 
-function findPriceRate(
-  priceRates: PriceRate[],
-  position: string,
-  employeeCount: number | null
-): PriceRate | undefined {
+type PriceRateRow = {
+  position: string;
+  employee_min: string;
+  employee_max: string;
+  unit_price: string;
+};
+
+const emptyRateRow: PriceRateRow = { position: "", employee_min: "0", employee_max: "", unit_price: "0" };
+
+function findMatchingRow(rows: PriceRateRow[], position: string, employeeCount: number | null): PriceRateRow | undefined {
   if (!position || employeeCount === null || Number.isNaN(employeeCount)) return undefined;
-  return priceRates.find(
-    (r) =>
-      r.position === position &&
-      employeeCount >= r.employee_min &&
-      (r.employee_max === null || employeeCount <= r.employee_max)
-  );
+  return rows.find((r) => {
+    if (r.position !== position) return false;
+    const min = Number(r.employee_min) || 0;
+    const max = r.employee_max === "" ? null : Number(r.employee_max);
+    return employeeCount >= min && (max === null || employeeCount <= max);
+  });
 }
 
 export function ProjectForm({
@@ -45,25 +50,53 @@ export function ProjectForm({
   const [clientEmployeeCount, setClientEmployeeCount] = useState(
     project?.client_employee_count != null ? String(project.client_employee_count) : ""
   );
+  const [rateRows, setRateRows] = useState<PriceRateRow[]>(
+    priceRates.length > 0
+      ? priceRates.map((r) => ({
+          position: r.position,
+          employee_min: String(r.employee_min),
+          employee_max: r.employee_max === null ? "" : String(r.employee_max),
+          unit_price: String(r.unit_price),
+        }))
+      : []
+  );
 
   const unitPriceNum = Number(unitPrice) || 0;
   const quantityNum = Number(quantity) || 0;
   const actualQuantityNum = Number(actualQuantity) || 0;
 
-  const positionOptions = Array.from(new Set(priceRates.map((r) => r.position)));
-  const matchedRate = findPriceRate(
-    priceRates,
+  const positionOptions = Array.from(new Set(rateRows.map((r) => r.position).filter(Boolean)));
+  const matchedRow = findMatchingRow(
+    rateRows,
     clientPosition,
     clientEmployeeCount === "" ? null : Number(clientEmployeeCount)
   );
 
   function applyMatch(position: string, employeeCountStr: string) {
-    const match = findPriceRate(priceRates, position, employeeCountStr === "" ? null : Number(employeeCountStr));
-    if (match) setUnitPrice(String(match.unit_price));
+    const match = findMatchingRow(rateRows, position, employeeCountStr === "" ? null : Number(employeeCountStr));
+    if (match) setUnitPrice(match.unit_price);
+  }
+
+  function updateRateRow(idx: number, field: keyof PriceRateRow, value: string) {
+    setRateRows((prev) => {
+      const next = [...prev];
+      next[idx] = { ...next[idx], [field]: value };
+      return next;
+    });
+  }
+
+  function addRateRow() {
+    setRateRows((prev) => [...prev, { ...emptyRateRow }]);
+  }
+
+  function removeRateRow(idx: number) {
+    setRateRows((prev) => prev.filter((_, i) => i !== idx));
   }
 
   return (
-    <form action={formAction} className="flex max-w-xl flex-col gap-4">
+    <form action={formAction} className="flex max-w-2xl flex-col gap-4">
+      <input type="hidden" name="price_rates" value={JSON.stringify(rateRows)} />
+
       <div className="flex flex-col gap-1">
         <label htmlFor="name" className="text-sm font-medium text-slate-700">
           案件名 <span className="text-red-500">*</span>
@@ -127,6 +160,86 @@ export function ProjectForm({
         </div>
       </div>
 
+      <div>
+        <label className="text-sm font-medium text-slate-700">この案件の料金表（役職×従業員数 → 単価）</label>
+        <p className="mb-2 text-xs text-slate-400">
+          この案件専用の単価設定です。他の案件には適用されません。行を登録しておくと、下の「取引先担当者の役職」「取引先企業の従業員数」を入力したときに単価が自動入力されます。
+        </p>
+        <div className="overflow-hidden rounded-lg border border-slate-200">
+          <table className="w-full text-sm">
+            <thead className="bg-slate-50">
+              <tr>
+                <th className="px-2 py-2 text-left font-medium text-slate-600">役職</th>
+                <th className="px-2 py-2 text-left font-medium text-slate-600">従業員数(下限)</th>
+                <th className="px-2 py-2 text-left font-medium text-slate-600">従業員数(上限・空欄可)</th>
+                <th className="px-2 py-2 text-left font-medium text-slate-600">単価（円）</th>
+                <th className="w-7"></th>
+              </tr>
+            </thead>
+            <tbody>
+              {rateRows.map((row, idx) => (
+                <tr key={idx} className="border-t border-slate-100">
+                  <td className="p-1.5">
+                    <input
+                      value={row.position}
+                      onChange={(e) => updateRateRow(idx, "position", e.target.value)}
+                      placeholder="例：部長"
+                      className="w-full rounded-md border border-slate-300 px-2 py-1.5 text-sm"
+                    />
+                  </td>
+                  <td className="p-1.5">
+                    <input
+                      type="number"
+                      min={0}
+                      step={1}
+                      value={row.employee_min}
+                      onChange={(e) => updateRateRow(idx, "employee_min", e.target.value)}
+                      className="w-full rounded-md border border-slate-300 px-2 py-1.5 text-sm"
+                    />
+                  </td>
+                  <td className="p-1.5">
+                    <input
+                      type="number"
+                      min={0}
+                      step={1}
+                      value={row.employee_max}
+                      onChange={(e) => updateRateRow(idx, "employee_max", e.target.value)}
+                      placeholder="上限なし"
+                      className="w-full rounded-md border border-slate-300 px-2 py-1.5 text-sm"
+                    />
+                  </td>
+                  <td className="p-1.5">
+                    <input
+                      type="number"
+                      min={0}
+                      value={row.unit_price}
+                      onChange={(e) => updateRateRow(idx, "unit_price", e.target.value)}
+                      className="w-full rounded-md border border-slate-300 px-2 py-1.5 text-sm"
+                    />
+                  </td>
+                  <td className="p-1">
+                    <button
+                      type="button"
+                      onClick={() => removeRateRow(idx)}
+                      className="text-slate-300 transition-colors hover:text-red-500"
+                    >
+                      <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                      </svg>
+                    </button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+          <div className="border-t border-slate-100 px-3 py-2">
+            <button type="button" onClick={addRateRow} className="text-sm font-medium text-emerald-700 hover:text-emerald-800">
+              ＋ 料金設定を追加
+            </button>
+          </div>
+        </div>
+      </div>
+
       <div className="grid grid-cols-2 gap-4">
         <div className="flex flex-col gap-1">
           <label htmlFor="client_position" className="text-sm font-medium text-slate-700">
@@ -172,9 +285,9 @@ export function ProjectForm({
 
       {(clientPosition || clientEmployeeCount) && (
         <p className="-mt-2 text-xs text-slate-400">
-          {matchedRate
-            ? `料金表に一致：${formatCurrency(matchedRate.unit_price)}（単価欄に自動入力済み。手動で上書きできます）`
-            : "該当する料金表がありません。単価は手動で入力してください。"}
+          {matchedRow
+            ? `この案件の料金表に一致：${formatCurrency(Number(matchedRow.unit_price) || 0)}（単価欄に自動入力済み。手動で上書きできます）`
+            : "この案件の料金表に該当する設定がありません。単価は手動で入力してください。"}
         </p>
       )}
 

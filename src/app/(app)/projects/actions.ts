@@ -8,6 +8,48 @@ import type { ProjectStatus } from "@/types/database";
 
 type FormState = { error: string } | null;
 
+type PriceRateInput = {
+  position: string;
+  employee_min: number;
+  employee_max: number | null;
+  unit_price: number;
+};
+
+function parsePriceRateRows(raw: string): { ok: true; value: PriceRateInput[] } | { ok: false; error: string } {
+  let rows: unknown;
+  try {
+    rows = JSON.parse(raw || "[]");
+  } catch {
+    return { ok: false, error: "料金表の形式が不正です。" };
+  }
+  if (!Array.isArray(rows)) return { ok: false, error: "料金表の形式が不正です。" };
+
+  const parsed: PriceRateInput[] = [];
+  for (const row of rows) {
+    if (typeof row !== "object" || row === null) continue;
+    const r = row as Record<string, unknown>;
+    const position = String(r.position ?? "").trim();
+    if (!position) continue; // 役職未入力の行はスキップ
+
+    const employeeMin = Number(r.employee_min);
+    if (!Number.isInteger(employeeMin) || employeeMin < 0)
+      return { ok: false, error: `料金表「${position}」の従業員数（下限）は0以上の整数で入力してください。` };
+
+    const employeeMaxRaw = String(r.employee_max ?? "").trim();
+    const employeeMax = employeeMaxRaw === "" ? null : Number(employeeMaxRaw);
+    if (employeeMax !== null && (!Number.isInteger(employeeMax) || employeeMax < employeeMin))
+      return { ok: false, error: `料金表「${position}」の従業員数（上限）は下限以上の整数、または空欄にしてください。` };
+
+    const unitPrice = Number(r.unit_price);
+    if (Number.isNaN(unitPrice) || unitPrice < 0)
+      return { ok: false, error: `料金表「${position}」の単価は0以上の数値で入力してください。` };
+
+    parsed.push({ position, employee_min: employeeMin, employee_max: employeeMax, unit_price: unitPrice });
+  }
+
+  return { ok: true, value: parsed };
+}
+
 function parseProjectForm(formData: FormData) {
   const name = String(formData.get("name") ?? "").trim();
   const staffId = String(formData.get("staff_id") ?? "").trim();
@@ -20,6 +62,7 @@ function parseProjectForm(formData: FormData) {
   const notes = String(formData.get("notes") ?? "").trim();
   const clientPosition = String(formData.get("client_position") ?? "").trim();
   const clientEmployeeCountRaw = String(formData.get("client_employee_count") ?? "").trim();
+  const priceRatesRaw = String(formData.get("price_rates") ?? "[]");
 
   if (!name) return { ok: false, error: "案件名は必須です。" } as const;
   if (!startDate) return { ok: false, error: "開始日は必須です。" } as const;
@@ -34,6 +77,9 @@ function parseProjectForm(formData: FormData) {
   const clientEmployeeCount = clientEmployeeCountRaw === "" ? null : Number(clientEmployeeCountRaw);
   if (clientEmployeeCount !== null && (!Number.isInteger(clientEmployeeCount) || clientEmployeeCount < 0))
     return { ok: false, error: "取引先企業の従業員数は0以上の整数で入力してください。" } as const;
+
+  const priceRates = parsePriceRateRows(priceRatesRaw);
+  if (!priceRates.ok) return { ok: false, error: priceRates.error } as const;
 
   return {
     ok: true,
@@ -50,6 +96,7 @@ function parseProjectForm(formData: FormData) {
       client_position: clientPosition || null,
       client_employee_count: clientEmployeeCount,
     },
+    priceRates: priceRates.value,
   } as const;
 }
 
@@ -62,9 +109,16 @@ export async function createProject(
   if (!parsed.ok) return { error: parsed.error };
 
   const supabase = await createClient();
-  const { error } = await supabase.from("projects").insert(parsed.value);
+  const { data, error } = await supabase.from("projects").insert(parsed.value).select().single();
 
   if (error) return { error: `登録に失敗しました: ${error.message}` };
+
+  if (parsed.priceRates.length > 0) {
+    const { error: rateError } = await supabase
+      .from("price_rates")
+      .insert(parsed.priceRates.map((r) => ({ ...r, project_id: data.id })));
+    if (rateError) return { error: `料金表の登録に失敗しました: ${rateError.message}` };
+  }
 
   revalidatePath("/projects");
   revalidatePath("/dashboard");
@@ -84,6 +138,16 @@ export async function updateProject(
   const { error } = await supabase.from("projects").update(parsed.value).eq("id", id);
 
   if (error) return { error: `更新に失敗しました: ${error.message}` };
+
+  const { error: deleteRateError } = await supabase.from("price_rates").delete().eq("project_id", id);
+  if (deleteRateError) return { error: `料金表の更新に失敗しました: ${deleteRateError.message}` };
+
+  if (parsed.priceRates.length > 0) {
+    const { error: rateError } = await supabase
+      .from("price_rates")
+      .insert(parsed.priceRates.map((r) => ({ ...r, project_id: id })));
+    if (rateError) return { error: `料金表の更新に失敗しました: ${rateError.message}` };
+  }
 
   revalidatePath("/projects");
   revalidatePath("/dashboard");
