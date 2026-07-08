@@ -13,6 +13,8 @@ type PriceRateInput = {
   employee_min: number;
   employee_max: number | null;
   unit_price: number;
+  quantity: number;
+  actual_quantity: number;
 };
 
 function parsePriceRateRows(raw: string): { ok: true; value: PriceRateInput[] } | { ok: false; error: string } {
@@ -44,7 +46,22 @@ function parsePriceRateRows(raw: string): { ok: true; value: PriceRateInput[] } 
     if (Number.isNaN(unitPrice) || unitPrice < 0)
       return { ok: false, error: `料金表「${position}」の単価は0以上の数値で入力してください。` };
 
-    parsed.push({ position, employee_min: employeeMin, employee_max: employeeMax, unit_price: unitPrice });
+    const quantity = Number(r.quantity ?? 0);
+    if (!Number.isInteger(quantity) || quantity < 0)
+      return { ok: false, error: `料金表「${position}」の予算件数は0以上の整数で入力してください。` };
+
+    const actualQuantity = Number(r.actual_quantity ?? 0);
+    if (!Number.isInteger(actualQuantity) || actualQuantity < 0)
+      return { ok: false, error: `料金表「${position}」の実績件数は0以上の整数で入力してください。` };
+
+    parsed.push({
+      position,
+      employee_min: employeeMin,
+      employee_max: employeeMax,
+      unit_price: unitPrice,
+      quantity,
+      actual_quantity: actualQuantity,
+    });
   }
 
   return { ok: true, value: parsed };
@@ -190,6 +207,43 @@ export async function updateActual(projectId: string, newQuantity: number) {
   const supabase = await createClient();
   const { error } = await supabase.rpc("update_project_actual", {
     p_project_id: projectId,
+    p_new_quantity: newQuantity,
+  });
+
+  if (error) throw new Error(error.message);
+
+  revalidatePath("/projects");
+  revalidatePath("/dashboard");
+  revalidatePath("/staff-summary");
+  revalidatePath("/charts");
+}
+
+export async function updateRateQuantity(rateId: string, newQuantity: number) {
+  await requireAdmin();
+
+  if (!Number.isInteger(newQuantity) || newQuantity < 0) {
+    throw new Error("件数は0以上の整数で入力してください。");
+  }
+
+  const supabase = await createClient();
+  const { error } = await supabase
+    .from("price_rates")
+    .update({ quantity: newQuantity })
+    .eq("id", rateId);
+
+  if (error) throw new Error(error.message);
+
+  revalidatePath("/projects");
+  revalidatePath("/dashboard");
+  revalidatePath("/staff-summary");
+  revalidatePath("/charts");
+}
+
+export async function updateRateActual(rateId: string, newQuantity: number) {
+  await requireProfile();
+  const supabase = await createClient();
+  const { error } = await supabase.rpc("update_price_rate_actual", {
+    p_rate_id: rateId,
     p_new_quantity: newQuantity,
   });
 

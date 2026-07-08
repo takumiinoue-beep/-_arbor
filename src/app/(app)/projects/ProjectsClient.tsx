@@ -1,12 +1,28 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { Fragment, useMemo, useState } from "react";
 import Link from "next/link";
-import type { Profile, ProjectStatus, ProjectWithStaff } from "@/types/database";
+import type { PriceRate, Profile, ProjectStatus, ProjectWithStaff } from "@/types/database";
 import { formatCurrency, formatPercent } from "@/lib/format";
 import { ActualEditor } from "./ActualEditor";
 import { TargetQuantityEditor } from "./TargetQuantityEditor";
+import { RateQuantityEditor } from "./RateQuantityEditor";
+import { RateActualEditor } from "./RateActualEditor";
 import { DeleteProjectButton } from "./DeleteProjectButton";
+
+function rateRangeLabel(rate: PriceRate) {
+  return rate.employee_max === null
+    ? `${rate.employee_min}人以上`
+    : `${rate.employee_min}〜${rate.employee_max}人`;
+}
+
+function sortedRates(rates: PriceRate[] | undefined) {
+  if (!rates) return [];
+  return [...rates].sort((a, b) => {
+    if (a.position !== b.position) return a.position.localeCompare(b.position);
+    return a.employee_min - b.employee_min;
+  });
+}
 
 export function ProjectsClient({
   projects,
@@ -162,80 +178,134 @@ export function ProjectsClient({
             {filtered.map((p) => {
               const diff = p.actual - p.budget;
               const canEditActual = isAdmin || p.staff_id === currentUserId;
+              const rates = sortedRates(p.price_rates);
+              const hasRates = rates.length > 0;
               return (
-                <tr key={p.id} className="hover:bg-slate-50">
-                  <td className="px-3 py-2 font-medium text-slate-800">{p.name}</td>
-                  <td className="px-3 py-2 text-slate-600">{p.staff?.name ?? "-"}</td>
-                  <td className="px-3 py-2 whitespace-nowrap text-slate-600">
-                    {p.start_date}
-                    {p.end_date ? ` ～ ${p.end_date}` : ""}
-                  </td>
-                  <td className="px-3 py-2 text-right">
-                    {isAdmin ? (
-                      <TargetQuantityEditor
-                        projectId={p.id}
-                        quantity={p.quantity}
-                        unitPrice={p.unit_price}
-                      />
-                    ) : (
-                      <span className="text-slate-700">
-                        {formatCurrency(p.budget)}
-                        <span className="ml-1 text-xs text-slate-400">({p.quantity}件)</span>
-                      </span>
-                    )}
-                  </td>
-                  <td className="px-3 py-2 text-right">
-                    {canEditActual ? (
-                      <ActualEditor
-                        projectId={p.id}
-                        actualQuantity={p.actual_quantity}
-                        unitPrice={p.unit_price}
-                      />
-                    ) : (
-                      <span className="text-slate-700">
-                        {formatCurrency(p.actual)}
-                        <span className="ml-1 text-xs text-slate-400">({p.actual_quantity}件)</span>
-                      </span>
-                    )}
-                  </td>
-                  <td
-                    className={`px-3 py-2 text-right ${diff >= 0 ? "text-emerald-600" : "text-red-600"}`}
-                  >
-                    {formatCurrency(diff)}
-                  </td>
-                  <td className="px-3 py-2 text-right text-slate-700">
-                    {formatPercent(p.actual, p.budget)}
-                  </td>
-                  <td className="px-3 py-2">
-                    <span
-                      className={`rounded-full px-2 py-0.5 text-xs ${
-                        p.status === "完了"
-                          ? "bg-emerald-100 text-emerald-700"
-                          : p.status === "中止"
-                            ? "bg-slate-200 text-slate-600"
-                            : "bg-blue-100 text-blue-700"
-                      }`}
+                <Fragment key={p.id}>
+                  <tr className="hover:bg-slate-50">
+                    <td className="px-3 py-2 font-medium text-slate-800">{p.name}</td>
+                    <td className="px-3 py-2 text-slate-600">{p.staff?.name ?? "-"}</td>
+                    <td className="px-3 py-2 whitespace-nowrap text-slate-600">
+                      {p.start_date}
+                      {p.end_date ? ` ～ ${p.end_date}` : ""}
+                    </td>
+                    <td className="px-3 py-2 text-right">
+                      {hasRates ? (
+                        <span className="text-slate-700">{formatCurrency(p.budget)}</span>
+                      ) : isAdmin ? (
+                        <TargetQuantityEditor
+                          projectId={p.id}
+                          quantity={p.quantity}
+                          unitPrice={p.unit_price}
+                        />
+                      ) : (
+                        <span className="text-slate-700">
+                          {formatCurrency(p.budget)}
+                          <span className="ml-1 text-xs text-slate-400">({p.quantity}件)</span>
+                        </span>
+                      )}
+                    </td>
+                    <td className="px-3 py-2 text-right">
+                      {hasRates ? (
+                        <span className="text-slate-700">{formatCurrency(p.actual)}</span>
+                      ) : canEditActual ? (
+                        <ActualEditor
+                          projectId={p.id}
+                          actualQuantity={p.actual_quantity}
+                          unitPrice={p.unit_price}
+                        />
+                      ) : (
+                        <span className="text-slate-700">
+                          {formatCurrency(p.actual)}
+                          <span className="ml-1 text-xs text-slate-400">({p.actual_quantity}件)</span>
+                        </span>
+                      )}
+                    </td>
+                    <td
+                      className={`px-3 py-2 text-right ${diff >= 0 ? "text-emerald-600" : "text-red-600"}`}
                     >
-                      {p.status}
-                    </span>
-                  </td>
-                  <td className="max-w-[160px] truncate px-3 py-2 text-slate-500" title={p.notes ?? ""}>
-                    {p.notes ?? ""}
-                  </td>
-                  <td className="px-3 py-2">
-                    {isAdmin && (
-                      <div className="flex gap-2">
-                        <Link
-                          href={`/projects/${p.id}/edit`}
-                          className="text-xs text-slate-600 hover:underline"
-                        >
-                          編集
-                        </Link>
-                        <DeleteProjectButton projectId={p.id} />
-                      </div>
-                    )}
-                  </td>
-                </tr>
+                      {formatCurrency(diff)}
+                    </td>
+                    <td className="px-3 py-2 text-right text-slate-700">
+                      {formatPercent(p.actual, p.budget)}
+                    </td>
+                    <td className="px-3 py-2">
+                      <span
+                        className={`rounded-full px-2 py-0.5 text-xs ${
+                          p.status === "完了"
+                            ? "bg-emerald-100 text-emerald-700"
+                            : p.status === "中止"
+                              ? "bg-slate-200 text-slate-600"
+                              : "bg-blue-100 text-blue-700"
+                        }`}
+                      >
+                        {p.status}
+                      </span>
+                    </td>
+                    <td className="max-w-[160px] truncate px-3 py-2 text-slate-500" title={p.notes ?? ""}>
+                      {p.notes ?? ""}
+                    </td>
+                    <td className="px-3 py-2">
+                      {isAdmin && (
+                        <div className="flex gap-2">
+                          <Link
+                            href={`/projects/${p.id}/edit`}
+                            className="text-xs text-slate-600 hover:underline"
+                          >
+                            編集
+                          </Link>
+                          <DeleteProjectButton projectId={p.id} />
+                        </div>
+                      )}
+                    </td>
+                  </tr>
+                  {hasRates &&
+                    rates.map((r) => {
+                      const rBudget = r.unit_price * r.quantity;
+                      const rActual = r.unit_price * r.actual_quantity;
+                      const rDiff = rActual - rBudget;
+                      return (
+                        <tr key={r.id} className="bg-slate-50/60 text-xs">
+                          <td className="px-3 py-1.5 pl-6 text-slate-500" colSpan={3}>
+                            └ {r.position}（{rateRangeLabel(r)}）
+                          </td>
+                          <td className="px-3 py-1.5 text-right">
+                            {isAdmin ? (
+                              <RateQuantityEditor rateId={r.id} quantity={r.quantity} unitPrice={r.unit_price} />
+                            ) : (
+                              <span className="text-slate-500">
+                                {formatCurrency(rBudget)}
+                                <span className="ml-1 text-slate-400">({r.quantity}件)</span>
+                              </span>
+                            )}
+                          </td>
+                          <td className="px-3 py-1.5 text-right">
+                            {canEditActual ? (
+                              <RateActualEditor
+                                rateId={r.id}
+                                actualQuantity={r.actual_quantity}
+                                unitPrice={r.unit_price}
+                              />
+                            ) : (
+                              <span className="text-slate-500">
+                                {formatCurrency(rActual)}
+                                <span className="ml-1 text-slate-400">({r.actual_quantity}件)</span>
+                              </span>
+                            )}
+                          </td>
+                          <td
+                            className={`px-3 py-1.5 text-right ${rDiff >= 0 ? "text-emerald-600" : "text-red-600"}`}
+                          >
+                            {formatCurrency(rDiff)}
+                          </td>
+                          <td className="px-3 py-1.5 text-right text-slate-500">
+                            {formatPercent(rActual, rBudget)}
+                          </td>
+                          <td colSpan={3} />
+                        </tr>
+                      );
+                    })}
+                </Fragment>
               );
             })}
             {filtered.length === 0 && (

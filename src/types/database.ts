@@ -32,6 +32,7 @@ export type Project = {
 
 export type ProjectWithStaff = Project & {
   staff: Pick<Profile, "id" | "name"> | null;
+  price_rates?: PriceRate[];
 };
 
 export type ActualLog = {
@@ -60,6 +61,8 @@ export type PriceRate = {
   employee_min: number;
   employee_max: number | null;
   unit_price: number;
+  quantity: number;
+  actual_quantity: number;
   created_at: string;
 };
 

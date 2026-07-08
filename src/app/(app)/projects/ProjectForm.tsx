@@ -15,9 +15,18 @@ type PriceRateRow = {
   employee_min: string;
   employee_max: string;
   unit_price: string;
+  quantity: string;
+  actual_quantity: string;
 };
 
-const emptyRateRow: PriceRateRow = { position: "", employee_min: "0", employee_max: "", unit_price: "0" };
+const emptyRateRow: PriceRateRow = {
+  position: "",
+  employee_min: "0",
+  employee_max: "",
+  unit_price: "0",
+  quantity: "0",
+  actual_quantity: "0",
+};
 
 function findMatchingRow(rows: PriceRateRow[], position: string, employeeCount: number | null): PriceRateRow | undefined {
   if (!position || employeeCount === null || Number.isNaN(employeeCount)) return undefined;
@@ -57,6 +66,8 @@ export function ProjectForm({
           employee_min: String(r.employee_min),
           employee_max: r.employee_max === null ? "" : String(r.employee_max),
           unit_price: String(r.unit_price),
+          quantity: String(r.quantity),
+          actual_quantity: String(r.actual_quantity),
         }))
       : []
   );
@@ -64,6 +75,18 @@ export function ProjectForm({
   const unitPriceNum = Number(unitPrice) || 0;
   const quantityNum = Number(quantity) || 0;
   const actualQuantityNum = Number(actualQuantity) || 0;
+
+  const hasRateRows = rateRows.length > 0;
+  const rateRowsTotalBudget = rateRows.reduce(
+    (sum, r) => sum + (Number(r.unit_price) || 0) * (Number(r.quantity) || 0),
+    0
+  );
+  const rateRowsTotalActual = rateRows.reduce(
+    (sum, r) => sum + (Number(r.unit_price) || 0) * (Number(r.actual_quantity) || 0),
+    0
+  );
+  const totalBudget = hasRateRows ? rateRowsTotalBudget : unitPriceNum * quantityNum;
+  const totalActual = hasRateRows ? rateRowsTotalActual : unitPriceNum * actualQuantityNum;
 
   const positionOptions = Array.from(new Set(rateRows.map((r) => r.position).filter(Boolean)));
   const matchedRow = findMatchingRow(
@@ -163,9 +186,9 @@ export function ProjectForm({
       <div>
         <label className="text-sm font-medium text-slate-700">この案件の料金表（役職×従業員数 → 単価）</label>
         <p className="mb-2 text-xs text-slate-400">
-          この案件専用の単価設定です。他の案件には適用されません。行を登録しておくと、下の「取引先担当者の役職」「取引先企業の従業員数」を入力したときに単価が自動入力されます。
+          この案件専用の単価設定です。他の案件には適用されません。行を登録しておくと、下の「取引先担当者の役職」「取引先企業の従業員数」を入力したときに単価が自動入力されます。予算件数・実績件数も行ごとに入力でき、案件全体の予算・実績はその合計になります。
         </p>
-        <div className="overflow-hidden rounded-lg border border-slate-200">
+        <div className="overflow-x-auto rounded-lg border border-slate-200">
           <table className="w-full text-sm">
             <thead className="bg-slate-50">
               <tr>
@@ -173,6 +196,8 @@ export function ProjectForm({
                 <th className="px-2 py-2 text-left font-medium text-slate-600">従業員数(下限)</th>
                 <th className="px-2 py-2 text-left font-medium text-slate-600">従業員数(上限・空欄可)</th>
                 <th className="px-2 py-2 text-left font-medium text-slate-600">単価（円）</th>
+                <th className="px-2 py-2 text-left font-medium text-slate-600">予算件数</th>
+                <th className="px-2 py-2 text-left font-medium text-slate-600">実績件数</th>
                 <th className="w-7"></th>
               </tr>
             </thead>
@@ -214,6 +239,26 @@ export function ProjectForm({
                       min={0}
                       value={row.unit_price}
                       onChange={(e) => updateRateRow(idx, "unit_price", e.target.value)}
+                      className="w-full rounded-md border border-slate-300 px-2 py-1.5 text-sm"
+                    />
+                  </td>
+                  <td className="p-1.5">
+                    <input
+                      type="number"
+                      min={0}
+                      step={1}
+                      value={row.quantity}
+                      onChange={(e) => updateRateRow(idx, "quantity", e.target.value)}
+                      className="w-full rounded-md border border-slate-300 px-2 py-1.5 text-sm"
+                    />
+                  </td>
+                  <td className="p-1.5">
+                    <input
+                      type="number"
+                      min={0}
+                      step={1}
+                      value={row.actual_quantity}
+                      onChange={(e) => updateRateRow(idx, "actual_quantity", e.target.value)}
                       className="w-full rounded-md border border-slate-300 px-2 py-1.5 text-sm"
                     />
                   </td>
@@ -309,50 +354,68 @@ export function ProjectForm({
         </div>
         <div className="flex flex-col gap-1">
           <label htmlFor="quantity" className="text-sm font-medium text-slate-700">
-            件数 <span className="text-red-500">*</span>
+            件数 {!hasRateRows && <span className="text-red-500">*</span>}
           </label>
-          <input
-            id="quantity"
-            name="quantity"
-            type="number"
-            min={0}
-            step={1}
-            required
-            value={quantity}
-            onChange={(e) => setQuantity(e.target.value)}
-            className="rounded-md border border-slate-300 px-3 py-2 text-sm focus:border-slate-500 focus:outline-none"
-          />
+          {hasRateRows ? (
+            <>
+              <input type="hidden" name="quantity" value={quantity} />
+              <p className="rounded-md border border-dashed border-slate-300 px-3 py-2 text-sm text-slate-400">
+                料金表の行ごとに入力してください
+              </p>
+            </>
+          ) : (
+            <input
+              id="quantity"
+              name="quantity"
+              type="number"
+              min={0}
+              step={1}
+              required
+              value={quantity}
+              onChange={(e) => setQuantity(e.target.value)}
+              className="rounded-md border border-slate-300 px-3 py-2 text-sm focus:border-slate-500 focus:outline-none"
+            />
+          )}
         </div>
       </div>
 
       <div className="rounded-md bg-slate-50 px-3 py-2 text-sm text-slate-600">
-        予算（目標売上・自動計算）：
-        <span className="ml-1 font-semibold text-slate-900">
-          {formatCurrency(unitPriceNum * quantityNum)}
-        </span>
+        予算（目標売上・自動計算）
+        {hasRateRows && <span className="ml-1 text-xs text-slate-400">（料金表の予算件数の合計から算出）</span>}
+        ：
+        <span className="ml-1 font-semibold text-slate-900">{formatCurrency(totalBudget)}</span>
       </div>
 
       <div className="flex flex-col gap-1">
         <label htmlFor="actual_quantity" className="text-sm font-medium text-slate-700">
           実績件数
         </label>
-        <input
-          id="actual_quantity"
-          name="actual_quantity"
-          type="number"
-          min={0}
-          step={1}
-          value={actualQuantity}
-          onChange={(e) => setActualQuantity(e.target.value)}
-          className="rounded-md border border-slate-300 px-3 py-2 text-sm focus:border-slate-500 focus:outline-none"
-        />
+        {hasRateRows ? (
+          <>
+            <input type="hidden" name="actual_quantity" value={actualQuantity} />
+            <p className="rounded-md border border-dashed border-slate-300 px-3 py-2 text-sm text-slate-400">
+              料金表の行ごとに入力してください
+            </p>
+          </>
+        ) : (
+          <input
+            id="actual_quantity"
+            name="actual_quantity"
+            type="number"
+            min={0}
+            step={1}
+            value={actualQuantity}
+            onChange={(e) => setActualQuantity(e.target.value)}
+            className="rounded-md border border-slate-300 px-3 py-2 text-sm focus:border-slate-500 focus:outline-none"
+          />
+        )}
       </div>
 
       <div className="rounded-md bg-slate-50 px-3 py-2 text-sm text-slate-600">
-        実績（自動計算）：
-        <span className="ml-1 font-semibold text-slate-900">
-          {formatCurrency(unitPriceNum * actualQuantityNum)}
-        </span>
+        実績（自動計算）
+        {hasRateRows && <span className="ml-1 text-xs text-slate-400">（料金表の実績件数の合計から算出）</span>}
+        ：
+        <span className="ml-1 font-semibold text-slate-900">{formatCurrency(totalActual)}</span>
       </div>
 
       <div className="flex flex-col gap-1">

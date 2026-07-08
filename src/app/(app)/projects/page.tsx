@@ -10,7 +10,7 @@ export default async function ProjectsPage() {
   const [{ data: projects }, { data: staffList }] = await Promise.all([
     supabase
       .from("projects")
-      .select("*, staff:profiles!projects_staff_id_fkey(id, name)")
+      .select("*, staff:profiles!projects_staff_id_fkey(id, name), price_rates(*)")
       .order("start_date", { ascending: false }),
     supabase.from("profiles").select("*").order("name"),
   ]);
