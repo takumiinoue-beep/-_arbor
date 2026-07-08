@@ -19,7 +19,7 @@ export default async function InvoiceIssuePage() {
         .order("date", { ascending: false }),
       supabase
         .from("projects")
-        .select("id, name, unit_price, actual_quantity")
+        .select("id, name, unit_price, actual_quantity, start_date")
         .order("start_date", { ascending: false }),
     ]);
 

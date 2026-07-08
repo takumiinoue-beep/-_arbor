@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useMemo, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import Table, { type TableColumn } from "@/components/common/Table";
 import Modal from "@/components/common/Modal";
@@ -31,7 +31,18 @@ type ProjectOption = {
   name: string;
   unit_price: number;
   actual_quantity: number;
+  start_date: string;
 };
+
+function projectToItem(project: ProjectOption): InvoiceItemForm {
+  return {
+    description: project.name,
+    quantity: String(project.actual_quantity),
+    unit_price: String(project.unit_price),
+    tax_rate: 0.1,
+    amount: project.actual_quantity * project.unit_price,
+  };
+}
 
 export function InvoiceIssueClient({
   clients,
@@ -56,6 +67,14 @@ export function InvoiceIssueClient({
   const [editId, setEditId] = useState<number | null>(null);
   const [statusModal, setStatusModal] = useState<InvoiceRow | null>(null);
   const [selectedProjectId, setSelectedProjectId] = useState("");
+  const [selectedMonth, setSelectedMonth] = useState("");
+
+  const billableProjects = useMemo(() => projects.filter((p) => p.actual_quantity > 0), [projects]);
+
+  const projectMonths = useMemo(() => {
+    const set = new Set(billableProjects.map((p) => p.start_date.slice(0, 7)));
+    return Array.from(set).sort().reverse();
+  }, [billableProjects]);
 
   function updateItem(idx: number, field: keyof InvoiceItemForm, val: string | number) {
     setItems((prev) => {
@@ -70,23 +89,26 @@ export function InvoiceIssueClient({
     setItems((prev) => [...prev, { ...emptyItem }]);
   }
 
-  function addItemFromProject() {
-    const project = projects.find((p) => p.id === selectedProjectId);
-    if (!project) return;
-
-    const newItem: InvoiceItemForm = {
-      description: project.name,
-      quantity: String(project.actual_quantity),
-      unit_price: String(project.unit_price),
-      tax_rate: 0.1,
-      amount: project.actual_quantity * project.unit_price,
-    };
-
+  function appendItems(newItems: InvoiceItemForm[]) {
+    if (newItems.length === 0) return;
     setItems((prev) => {
       const isBlank = prev.length === 1 && !prev[0].description && !prev[0].amount;
-      return isBlank ? [newItem] : [...prev, newItem];
+      return isBlank ? newItems : [...prev, ...newItems];
     });
+  }
+
+  function addItemFromProject() {
+    const project = billableProjects.find((p) => p.id === selectedProjectId);
+    if (!project) return;
+    appendItems([projectToItem(project)]);
     setSelectedProjectId("");
+  }
+
+  function addItemsFromMonth() {
+    if (!selectedMonth) return;
+    const monthProjects = billableProjects.filter((p) => p.start_date.slice(0, 7) === selectedMonth);
+    appendItems(monthProjects.map(projectToItem));
+    setSelectedMonth("");
   }
 
   function removeItem(idx: number) {
@@ -396,28 +418,57 @@ export function InvoiceIssueClient({
           <div>
             <label className={labelClass}>明細</label>
 
-            {projects.length > 0 && (
-              <div className="mb-2 flex flex-wrap items-center gap-2">
-                <select
-                  className={`${inputClass} w-auto flex-1`}
-                  value={selectedProjectId}
-                  onChange={(e) => setSelectedProjectId(e.target.value)}
-                >
-                  <option value="">-- 案件から明細を追加 --</option>
-                  {projects.map((p) => (
-                    <option key={p.id} value={p.id}>
-                      {p.name}（実績 {p.actual_quantity}件 × ¥{p.unit_price.toLocaleString("ja-JP")}）
-                    </option>
-                  ))}
-                </select>
-                <button
-                  type="button"
-                  onClick={addItemFromProject}
-                  disabled={!selectedProjectId}
-                  className="rounded-md border border-slate-200 px-3 py-2 text-sm text-slate-600 hover:bg-slate-100 disabled:opacity-50"
-                >
-                  ＋ 追加
-                </button>
+            {billableProjects.length > 0 && (
+              <div className="mb-2 flex flex-col gap-2">
+                {projectMonths.length > 0 && (
+                  <div className="flex flex-wrap items-center gap-2">
+                    <select
+                      className={`${inputClass} w-auto flex-1`}
+                      value={selectedMonth}
+                      onChange={(e) => setSelectedMonth(e.target.value)}
+                    >
+                      <option value="">-- 月をまとめて追加 --</option>
+                      {projectMonths.map((m) => {
+                        const count = billableProjects.filter((p) => p.start_date.slice(0, 7) === m).length;
+                        return (
+                          <option key={m} value={m}>
+                            {Number(m.slice(5, 7))}月（{count}件）
+                          </option>
+                        );
+                      })}
+                    </select>
+                    <button
+                      type="button"
+                      onClick={addItemsFromMonth}
+                      disabled={!selectedMonth}
+                      className="rounded-md border border-slate-200 px-3 py-2 text-sm text-slate-600 hover:bg-slate-100 disabled:opacity-50"
+                    >
+                      ＋ 一括追加
+                    </button>
+                  </div>
+                )}
+                <div className="flex flex-wrap items-center gap-2">
+                  <select
+                    className={`${inputClass} w-auto flex-1`}
+                    value={selectedProjectId}
+                    onChange={(e) => setSelectedProjectId(e.target.value)}
+                  >
+                    <option value="">-- 案件から明細を追加 --</option>
+                    {billableProjects.map((p) => (
+                      <option key={p.id} value={p.id}>
+                        {p.name}（実績 {p.actual_quantity}件 × ¥{p.unit_price.toLocaleString("ja-JP")}）
+                      </option>
+                    ))}
+                  </select>
+                  <button
+                    type="button"
+                    onClick={addItemFromProject}
+                    disabled={!selectedProjectId}
+                    className="rounded-md border border-slate-200 px-3 py-2 text-sm text-slate-600 hover:bg-slate-100 disabled:opacity-50"
+                  >
+                    ＋ 追加
+                  </button>
+                </div>
               </div>
             )}
 
