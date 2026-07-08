@@ -3,7 +3,7 @@
 import { useActionState, useState } from "react";
 import Link from "next/link";
 import type { PriceRate, Profile, Project } from "@/types/database";
-import { formatCurrency } from "@/lib/format";
+import { formatCurrency, formatPercent } from "@/lib/format";
 
 type Action = (
   prevState: { error: string } | null,
@@ -17,6 +17,7 @@ type PriceRateRow = {
   unit_price: string;
   quantity: string;
   actual_quantity: string;
+  confirmed_quantity: string;
 };
 
 const emptyRateRow: PriceRateRow = {
@@ -26,6 +27,7 @@ const emptyRateRow: PriceRateRow = {
   unit_price: "0",
   quantity: "0",
   actual_quantity: "0",
+  confirmed_quantity: "0",
 };
 
 function findMatchingRow(rows: PriceRateRow[], position: string, employeeCount: number | null): PriceRateRow | undefined {
@@ -55,6 +57,9 @@ export function ProjectForm({
   const [unitPrice, setUnitPrice] = useState(project ? String(project.unit_price) : "");
   const [quantity, setQuantity] = useState(project ? String(project.quantity) : "");
   const [actualQuantity, setActualQuantity] = useState(project ? String(project.actual_quantity) : "0");
+  const [confirmedQuantity, setConfirmedQuantity] = useState(
+    project ? String(project.confirmed_quantity) : "0"
+  );
   const [clientPosition, setClientPosition] = useState(project?.client_position ?? "");
   const [clientEmployeeCount, setClientEmployeeCount] = useState(
     project?.client_employee_count != null ? String(project.client_employee_count) : ""
@@ -68,6 +73,7 @@ export function ProjectForm({
           unit_price: String(r.unit_price),
           quantity: String(r.quantity),
           actual_quantity: String(r.actual_quantity),
+          confirmed_quantity: String(r.confirmed_quantity),
         }))
       : []
   );
@@ -75,6 +81,7 @@ export function ProjectForm({
   const unitPriceNum = Number(unitPrice) || 0;
   const quantityNum = Number(quantity) || 0;
   const actualQuantityNum = Number(actualQuantity) || 0;
+  const confirmedQuantityNum = Number(confirmedQuantity) || 0;
 
   const hasRateRows = rateRows.length > 0;
   const rateRowsTotalBudget = rateRows.reduce(
@@ -85,8 +92,15 @@ export function ProjectForm({
     (sum, r) => sum + (Number(r.unit_price) || 0) * (Number(r.actual_quantity) || 0),
     0
   );
+  const rateRowsTotalActualQty = rateRows.reduce((sum, r) => sum + (Number(r.actual_quantity) || 0), 0);
+  const rateRowsTotalConfirmedQty = rateRows.reduce(
+    (sum, r) => sum + (Number(r.confirmed_quantity) || 0),
+    0
+  );
   const totalBudget = hasRateRows ? rateRowsTotalBudget : unitPriceNum * quantityNum;
   const totalActual = hasRateRows ? rateRowsTotalActual : unitPriceNum * actualQuantityNum;
+  const totalActualQty = hasRateRows ? rateRowsTotalActualQty : actualQuantityNum;
+  const totalConfirmedQty = hasRateRows ? rateRowsTotalConfirmedQty : confirmedQuantityNum;
 
   const positionOptions = Array.from(new Set(rateRows.map((r) => r.position).filter(Boolean)));
   const matchedRow = findMatchingRow(
@@ -198,6 +212,7 @@ export function ProjectForm({
                 <th className="px-2 py-2 text-left font-medium text-slate-600">単価（円）</th>
                 <th className="px-2 py-2 text-left font-medium text-slate-600">予算件数</th>
                 <th className="px-2 py-2 text-left font-medium text-slate-600">実績件数</th>
+                <th className="px-2 py-2 text-left font-medium text-slate-600">確定件数</th>
                 <th className="w-7"></th>
               </tr>
             </thead>
@@ -259,6 +274,16 @@ export function ProjectForm({
                       step={1}
                       value={row.actual_quantity}
                       onChange={(e) => updateRateRow(idx, "actual_quantity", e.target.value)}
+                      className="w-full rounded-md border border-slate-300 px-2 py-1.5 text-sm"
+                    />
+                  </td>
+                  <td className="p-1.5">
+                    <input
+                      type="number"
+                      min={0}
+                      step={1}
+                      value={row.confirmed_quantity}
+                      onChange={(e) => updateRateRow(idx, "confirmed_quantity", e.target.value)}
                       className="w-full rounded-md border border-slate-300 px-2 py-1.5 text-sm"
                     />
                   </td>
@@ -416,6 +441,40 @@ export function ProjectForm({
         {hasRateRows && <span className="ml-1 text-xs text-slate-400">（料金表の実績件数の合計から算出）</span>}
         ：
         <span className="ml-1 font-semibold text-slate-900">{formatCurrency(totalActual)}</span>
+      </div>
+
+      <div className="flex flex-col gap-1">
+        <label htmlFor="confirmed_quantity" className="text-sm font-medium text-slate-700">
+          確定件数
+        </label>
+        {hasRateRows ? (
+          <>
+            <input type="hidden" name="confirmed_quantity" value={confirmedQuantity} />
+            <p className="rounded-md border border-dashed border-slate-300 px-3 py-2 text-sm text-slate-400">
+              料金表の行ごとに入力してください
+            </p>
+          </>
+        ) : (
+          <input
+            id="confirmed_quantity"
+            name="confirmed_quantity"
+            type="number"
+            min={0}
+            step={1}
+            value={confirmedQuantity}
+            onChange={(e) => setConfirmedQuantity(e.target.value)}
+            className="rounded-md border border-slate-300 px-3 py-2 text-sm focus:border-slate-500 focus:outline-none"
+          />
+        )}
+      </div>
+
+      <div className="rounded-md bg-slate-50 px-3 py-2 text-sm text-slate-600">
+        有効率（確定件数 ÷ 実績件数・自動計算）
+        {hasRateRows && <span className="ml-1 text-xs text-slate-400">（料金表の件数の合計から算出）</span>}
+        ：
+        <span className="ml-1 font-semibold text-slate-900">
+          {formatPercent(totalConfirmedQty, totalActualQty)}
+        </span>
       </div>
 
       <div className="flex flex-col gap-1">

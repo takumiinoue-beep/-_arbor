@@ -8,7 +8,7 @@ export default async function DashboardPage() {
   const supabase = await createClient();
 
   const [{ data: projects }, { data: fixedCosts }] = await Promise.all([
-    supabase.from("projects").select("*, staff:profiles!projects_staff_id_fkey(id, name)"),
+    supabase.from("projects").select("*, staff:profiles!projects_staff_id_fkey(id, name), price_rates(*)"),
     supabase.from("fixed_costs").select("*"),
   ]);
 

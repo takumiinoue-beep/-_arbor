@@ -15,6 +15,7 @@ type PriceRateInput = {
   unit_price: number;
   quantity: number;
   actual_quantity: number;
+  confirmed_quantity: number;
 };
 
 function parsePriceRateRows(raw: string): { ok: true; value: PriceRateInput[] } | { ok: false; error: string } {
@@ -54,6 +55,10 @@ function parsePriceRateRows(raw: string): { ok: true; value: PriceRateInput[] } 
     if (!Number.isInteger(actualQuantity) || actualQuantity < 0)
       return { ok: false, error: `料金表「${position}」の実績件数は0以上の整数で入力してください。` };
 
+    const confirmedQuantity = Number(r.confirmed_quantity ?? 0);
+    if (!Number.isInteger(confirmedQuantity) || confirmedQuantity < 0)
+      return { ok: false, error: `料金表「${position}」の確定件数は0以上の整数で入力してください。` };
+
     parsed.push({
       position,
       employee_min: employeeMin,
@@ -61,6 +66,7 @@ function parsePriceRateRows(raw: string): { ok: true; value: PriceRateInput[] } 
       unit_price: unitPrice,
       quantity,
       actual_quantity: actualQuantity,
+      confirmed_quantity: confirmedQuantity,
     });
   }
 
@@ -75,6 +81,7 @@ function parseProjectForm(formData: FormData) {
   const unitPrice = Number(formData.get("unit_price") ?? 0);
   const quantity = Number(formData.get("quantity") ?? 0);
   const actualQuantity = Number(formData.get("actual_quantity") ?? 0);
+  const confirmedQuantity = Number(formData.get("confirmed_quantity") ?? 0);
   const status = String(formData.get("status") ?? "進行中") as ProjectStatus;
   const notes = String(formData.get("notes") ?? "").trim();
   const clientPosition = String(formData.get("client_position") ?? "").trim();
@@ -90,6 +97,8 @@ function parseProjectForm(formData: FormData) {
     return { ok: false, error: "件数は0以上の整数で入力してください。" } as const;
   if (!Number.isInteger(actualQuantity) || actualQuantity < 0)
     return { ok: false, error: "実績件数は0以上の整数で入力してください。" } as const;
+  if (!Number.isInteger(confirmedQuantity) || confirmedQuantity < 0)
+    return { ok: false, error: "確定件数は0以上の整数で入力してください。" } as const;
 
   const clientEmployeeCount = clientEmployeeCountRaw === "" ? null : Number(clientEmployeeCountRaw);
   if (clientEmployeeCount !== null && (!Number.isInteger(clientEmployeeCount) || clientEmployeeCount < 0))
@@ -108,6 +117,7 @@ function parseProjectForm(formData: FormData) {
       unit_price: unitPrice,
       quantity,
       actual_quantity: actualQuantity,
+      confirmed_quantity: confirmedQuantity,
       status,
       notes: notes || null,
       client_position: clientPosition || null,
@@ -246,6 +256,48 @@ export async function updateRateActual(rateId: string, newQuantity: number) {
     p_rate_id: rateId,
     p_new_quantity: newQuantity,
   });
+
+  if (error) throw new Error(error.message);
+
+  revalidatePath("/projects");
+  revalidatePath("/dashboard");
+  revalidatePath("/staff-summary");
+  revalidatePath("/charts");
+}
+
+export async function updateConfirmedQuantity(projectId: string, newQuantity: number) {
+  await requireAdmin();
+
+  if (!Number.isInteger(newQuantity) || newQuantity < 0) {
+    throw new Error("件数は0以上の整数で入力してください。");
+  }
+
+  const supabase = await createClient();
+  const { error } = await supabase
+    .from("projects")
+    .update({ confirmed_quantity: newQuantity })
+    .eq("id", projectId);
+
+  if (error) throw new Error(error.message);
+
+  revalidatePath("/projects");
+  revalidatePath("/dashboard");
+  revalidatePath("/staff-summary");
+  revalidatePath("/charts");
+}
+
+export async function updateRateConfirmedQuantity(rateId: string, newQuantity: number) {
+  await requireAdmin();
+
+  if (!Number.isInteger(newQuantity) || newQuantity < 0) {
+    throw new Error("件数は0以上の整数で入力してください。");
+  }
+
+  const supabase = await createClient();
+  const { error } = await supabase
+    .from("price_rates")
+    .update({ confirmed_quantity: newQuantity })
+    .eq("id", rateId);
 
   if (error) throw new Error(error.message);
 

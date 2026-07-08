@@ -4,10 +4,13 @@ import { Fragment, useMemo, useState } from "react";
 import Link from "next/link";
 import type { PriceRate, Profile, ProjectStatus, ProjectWithStaff } from "@/types/database";
 import { formatCurrency, formatPercent } from "@/lib/format";
+import { getEffectiveCounts } from "@/lib/aggregate";
 import { ActualEditor } from "./ActualEditor";
 import { TargetQuantityEditor } from "./TargetQuantityEditor";
 import { RateQuantityEditor } from "./RateQuantityEditor";
 import { RateActualEditor } from "./RateActualEditor";
+import { ConfirmedQuantityEditor } from "./ConfirmedQuantityEditor";
+import { RateConfirmedQuantityEditor } from "./RateConfirmedQuantityEditor";
 import { DeleteProjectButton } from "./DeleteProjectButton";
 
 function rateRangeLabel(rate: PriceRate) {
@@ -29,16 +32,19 @@ export function ProjectsClient({
   staffList,
   currentUserId,
   isAdmin,
+  todayISO,
 }: {
   projects: ProjectWithStaff[];
   staffList: Profile[];
   currentUserId: string;
   isAdmin: boolean;
+  todayISO: string;
 }) {
+  const currentMonthKey = todayISO.slice(0, 7);
   const [keyword, setKeyword] = useState("");
   const [staffId, setStaffId] = useState("");
   const [status, setStatus] = useState<ProjectStatus | "">("");
-  const [monthTab, setMonthTab] = useState("all");
+  const [monthTab, setMonthTab] = useState(currentMonthKey);
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
 
   function toggleExpanded(id: string) {
@@ -52,8 +58,9 @@ export function ProjectsClient({
 
   const monthTabs = useMemo(() => {
     const set = new Set(projects.map((p) => p.start_date.slice(0, 7)));
+    set.add(currentMonthKey);
     return Array.from(set).sort();
-  }, [projects]);
+  }, [projects, currentMonthKey]);
 
   // 複数年にまたがる場合のみ「2026年7月」のように年を併記して曖昧さを避ける
   const spansMultipleYears = useMemo(
@@ -79,11 +86,14 @@ export function ProjectsClient({
   const totals = useMemo(() => {
     return filtered.reduce(
       (acc, p) => {
+        const { actualQty, confirmedQty } = getEffectiveCounts(p);
         acc.budget += p.budget;
         acc.actual += p.actual;
+        acc.actualQty += actualQty;
+        acc.confirmedQty += confirmedQty;
         return acc;
       },
-      { budget: 0, actual: 0 }
+      { budget: 0, actual: 0, actualQty: 0, confirmedQty: 0 }
     );
   }, [filtered]);
 
@@ -177,6 +187,8 @@ export function ProjectsClient({
               <th className="px-3 py-2 text-left font-medium text-slate-500">期間</th>
               <th className="px-3 py-2 text-right font-medium text-slate-500">予算</th>
               <th className="px-3 py-2 text-right font-medium text-slate-500">実績</th>
+              <th className="px-3 py-2 text-right font-medium text-slate-500">確定件数</th>
+              <th className="px-3 py-2 text-right font-medium text-slate-500">有効率</th>
               <th className="px-3 py-2 text-right font-medium text-slate-500">差異</th>
               <th className="px-3 py-2 text-right font-medium text-slate-500">達成率</th>
               <th className="px-3 py-2 text-left font-medium text-slate-500">ステータス</th>
@@ -190,6 +202,7 @@ export function ProjectsClient({
               const canEditActual = isAdmin || p.staff_id === currentUserId;
               const rates = sortedRates(p.price_rates);
               const hasRates = rates.length > 0;
+              const { actualQty: totalActualQty, confirmedQty: totalConfirmedQty } = getEffectiveCounts(p);
               return (
                 <Fragment key={p.id}>
                   <tr className="hover:bg-slate-50">
@@ -242,6 +255,18 @@ export function ProjectsClient({
                           <span className="ml-1 text-xs text-slate-400">({p.actual_quantity}件)</span>
                         </span>
                       )}
+                    </td>
+                    <td className="px-3 py-2 text-right">
+                      {hasRates ? (
+                        <span className="text-slate-700">{totalConfirmedQty}件</span>
+                      ) : isAdmin ? (
+                        <ConfirmedQuantityEditor projectId={p.id} confirmedQuantity={p.confirmed_quantity} />
+                      ) : (
+                        <span className="text-slate-700">{p.confirmed_quantity}件</span>
+                      )}
+                    </td>
+                    <td className="px-3 py-2 text-right text-slate-700">
+                      {formatPercent(totalConfirmedQty, totalActualQty)}
                     </td>
                     <td
                       className={`px-3 py-2 text-right ${diff >= 0 ? "text-emerald-600" : "text-red-600"}`}
@@ -316,6 +341,19 @@ export function ProjectsClient({
                               </span>
                             )}
                           </td>
+                          <td className="px-3 py-1.5 text-right">
+                            {isAdmin ? (
+                              <RateConfirmedQuantityEditor
+                                rateId={r.id}
+                                confirmedQuantity={r.confirmed_quantity}
+                              />
+                            ) : (
+                              <span className="text-slate-500">{r.confirmed_quantity}件</span>
+                            )}
+                          </td>
+                          <td className="px-3 py-1.5 text-right text-slate-500">
+                            {formatPercent(r.confirmed_quantity, r.actual_quantity)}
+                          </td>
                           <td
                             className={`px-3 py-1.5 text-right ${rDiff >= 0 ? "text-emerald-600" : "text-red-600"}`}
                           >
@@ -333,7 +371,7 @@ export function ProjectsClient({
             })}
             {filtered.length === 0 && (
               <tr>
-                <td colSpan={10} className="px-3 py-6 text-center text-slate-400">
+                <td colSpan={12} className="px-3 py-6 text-center text-slate-400">
                   該当する案件がありません
                 </td>
               </tr>
@@ -347,6 +385,10 @@ export function ProjectsClient({
                 </td>
                 <td className="px-3 py-2 text-right">{formatCurrency(totals.budget)}</td>
                 <td className="px-3 py-2 text-right">{formatCurrency(totals.actual)}</td>
+                <td className="px-3 py-2 text-right">{totals.confirmedQty}件</td>
+                <td className="px-3 py-2 text-right">
+                  {formatPercent(totals.confirmedQty, totals.actualQty)}
+                </td>
                 <td
                   className={`px-3 py-2 text-right ${
                     totals.actual - totals.budget >= 0 ? "text-emerald-600" : "text-red-600"

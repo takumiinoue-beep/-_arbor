@@ -2,7 +2,14 @@
 
 import { useMemo, useState } from "react";
 import type { FixedCost, ProjectWithStaff } from "@/types/database";
-import { aggregateByStaff, aggregateByMonth, sumBudget, sumActual } from "@/lib/aggregate";
+import {
+  aggregateByStaff,
+  aggregateByMonth,
+  sumBudget,
+  sumActual,
+  getEffectiveCounts,
+  sumEffectiveCounts,
+} from "@/lib/aggregate";
 import { formatCurrency, formatPercent } from "@/lib/format";
 import {
   PERIOD_TABS,
@@ -59,6 +66,7 @@ export function DashboardClient({
   const actual = sumActual(filteredProjects);
   const fixedCostTotal = filteredFixedCosts.reduce((sum, f) => sum + f.amount, 0);
   const grossProfit = actual - fixedCostTotal;
+  const { actualQty: totalActualQty, confirmedQty: totalConfirmedQty } = sumEffectiveCounts(filteredProjects);
 
   const staffAgg = aggregateByStaff(filteredProjects);
   const monthlyAgg = aggregateByMonth(filteredProjects);
@@ -108,7 +116,7 @@ export function DashboardClient({
         </div>
       )}
 
-      <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-5">
+      <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-6">
         <SummaryCard label="予算合計" value={formatCurrency(budget)} />
         <SummaryCard label="実績合計" value={formatCurrency(actual)} />
         <SummaryCard
@@ -122,6 +130,7 @@ export function DashboardClient({
           value={formatCurrency(grossProfit)}
           tone={grossProfit >= 0 ? "positive" : "negative"}
         />
+        <SummaryCard label="有効率（確定件数÷実績件数）" value={formatPercent(totalConfirmedQty, totalActualQty)} />
       </div>
       <p className="-mt-3 text-xs text-slate-400">
         ※ 案件は開始日、固定費は対象年月をもとに選択中の期間で絞り込んでいます。固定費合計はその期間に該当する固定費の単純合計です。
@@ -151,24 +160,33 @@ export function DashboardClient({
                 <th className="px-3 py-2 text-left font-medium text-slate-500">担当者</th>
                 <th className="px-3 py-2 text-right font-medium text-slate-500">予算</th>
                 <th className="px-3 py-2 text-right font-medium text-slate-500">実績</th>
+                <th className="px-3 py-2 text-right font-medium text-slate-500">確定件数</th>
+                <th className="px-3 py-2 text-right font-medium text-slate-500">有効率</th>
                 <th className="px-3 py-2 text-right font-medium text-slate-500">達成率</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
-              {projectRows.map((p) => (
-                <tr key={p.id} className="hover:bg-slate-50">
-                  <td className="px-3 py-2 font-medium text-slate-800">{p.name}</td>
-                  <td className="px-3 py-2 text-slate-600">{p.staff?.name ?? "-"}</td>
-                  <td className="px-3 py-2 text-right text-slate-700">{formatCurrency(p.budget)}</td>
-                  <td className="px-3 py-2 text-right text-slate-700">{formatCurrency(p.actual)}</td>
-                  <td className="px-3 py-2 text-right text-slate-700">
-                    {formatPercent(p.actual, p.budget)}
-                  </td>
-                </tr>
-              ))}
+              {projectRows.map((p) => {
+                const { actualQty, confirmedQty } = getEffectiveCounts(p);
+                return (
+                  <tr key={p.id} className="hover:bg-slate-50">
+                    <td className="px-3 py-2 font-medium text-slate-800">{p.name}</td>
+                    <td className="px-3 py-2 text-slate-600">{p.staff?.name ?? "-"}</td>
+                    <td className="px-3 py-2 text-right text-slate-700">{formatCurrency(p.budget)}</td>
+                    <td className="px-3 py-2 text-right text-slate-700">{formatCurrency(p.actual)}</td>
+                    <td className="px-3 py-2 text-right text-slate-700">{confirmedQty}件</td>
+                    <td className="px-3 py-2 text-right text-slate-700">
+                      {formatPercent(confirmedQty, actualQty)}
+                    </td>
+                    <td className="px-3 py-2 text-right text-slate-700">
+                      {formatPercent(p.actual, p.budget)}
+                    </td>
+                  </tr>
+                );
+              })}
               {projectRows.length === 0 && (
                 <tr>
-                  <td colSpan={5} className="px-3 py-6 text-center text-slate-400">
+                  <td colSpan={7} className="px-3 py-6 text-center text-slate-400">
                     この期間に該当する案件がありません
                   </td>
                 </tr>

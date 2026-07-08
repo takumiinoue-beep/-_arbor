@@ -50,6 +50,33 @@ export function sumActual(projects: ProjectWithStaff[]): number {
   return projects.reduce((sum, p) => sum + p.actual, 0);
 }
 
+export type EffectiveCounts = { actualQty: number; confirmedQty: number };
+
+// 実績件数・確定件数を返す。料金表の行がある案件は行ごとの合計、
+// 無い案件は案件本体の値を使う（予算・実績件数と同じ考え方）。
+export function getEffectiveCounts(p: ProjectWithStaff): EffectiveCounts {
+  const rates = p.price_rates;
+  if (rates && rates.length > 0) {
+    return {
+      actualQty: rates.reduce((sum, r) => sum + r.actual_quantity, 0),
+      confirmedQty: rates.reduce((sum, r) => sum + r.confirmed_quantity, 0),
+    };
+  }
+  return { actualQty: p.actual_quantity, confirmedQty: p.confirmed_quantity };
+}
+
+export function sumEffectiveCounts(projects: ProjectWithStaff[]): EffectiveCounts {
+  return projects.reduce(
+    (acc, p) => {
+      const c = getEffectiveCounts(p);
+      acc.actualQty += c.actualQty;
+      acc.confirmedQty += c.confirmedQty;
+      return acc;
+    },
+    { actualQty: 0, confirmedQty: 0 }
+  );
+}
+
 export type ProjectChartRow = {
   projectName: string;
   staffName: string;

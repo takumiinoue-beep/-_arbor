@@ -15,6 +15,8 @@ export default async function ProjectsPage() {
     supabase.from("profiles").select("*").order("name"),
   ]);
 
+  const todayISO = new Date().toISOString().slice(0, 10);
+
   return (
     <div className="flex flex-col gap-6">
       <h1 className="text-lg font-bold text-slate-900">案件一覧</h1>
@@ -23,6 +25,7 @@ export default async function ProjectsPage() {
         staffList={staffList ?? []}
         currentUserId={profile.id}
         isAdmin={profile.role === "admin"}
+        todayISO={todayISO}
       />
     </div>
   );
