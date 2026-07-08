@@ -7,7 +7,7 @@ export default async function InvoiceIssuePage() {
   await requireAdmin();
   const supabase = await createClient();
 
-  const [{ data: clients }, { data: bankAccounts }, { data: settingsRows }, { data: invoicesRaw }] =
+  const [{ data: clients }, { data: bankAccounts }, { data: settingsRows }, { data: invoicesRaw }, { data: projects }] =
     await Promise.all([
       supabase.from("clients").select("*").order("name"),
       supabase.from("company_bank_accounts").select("*").order("id"),
@@ -17,6 +17,10 @@ export default async function InvoiceIssuePage() {
         .select("*, clients(name)")
         .eq("is_deleted", false)
         .order("date", { ascending: false }),
+      supabase
+        .from("projects")
+        .select("id, name, unit_price, actual_quantity")
+        .order("start_date", { ascending: false }),
     ]);
 
   const invoices = (invoicesRaw ?? []).map((row) => {
@@ -30,6 +34,7 @@ export default async function InvoiceIssuePage() {
       companyBankAccounts={(bankAccounts as CompanyBankAccount[]) ?? []}
       company={settingsRows?.[0] ?? null}
       invoices={invoices}
+      projects={projects ?? []}
     />
   );
 }

@@ -26,16 +26,25 @@ import {
 
 type InvoiceRow = InvoiceIssued & { client_name: string | null };
 
+type ProjectOption = {
+  id: string;
+  name: string;
+  unit_price: number;
+  actual_quantity: number;
+};
+
 export function InvoiceIssueClient({
   clients,
   companyBankAccounts,
   company,
   invoices,
+  projects,
 }: {
   clients: Client[];
   companyBankAccounts: CompanyBankAccount[];
   company: CompanySettings | null;
   invoices: InvoiceRow[];
+  projects: ProjectOption[];
 }) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
@@ -46,6 +55,7 @@ export function InvoiceIssueClient({
   const [success, setSuccess] = useState("");
   const [editId, setEditId] = useState<number | null>(null);
   const [statusModal, setStatusModal] = useState<InvoiceRow | null>(null);
+  const [selectedProjectId, setSelectedProjectId] = useState("");
 
   function updateItem(idx: number, field: keyof InvoiceItemForm, val: string | number) {
     setItems((prev) => {
@@ -58,6 +68,25 @@ export function InvoiceIssueClient({
 
   function addItem() {
     setItems((prev) => [...prev, { ...emptyItem }]);
+  }
+
+  function addItemFromProject() {
+    const project = projects.find((p) => p.id === selectedProjectId);
+    if (!project) return;
+
+    const newItem: InvoiceItemForm = {
+      description: project.name,
+      quantity: String(project.actual_quantity),
+      unit_price: String(project.unit_price),
+      tax_rate: 0.1,
+      amount: project.actual_quantity * project.unit_price,
+    };
+
+    setItems((prev) => {
+      const isBlank = prev.length === 1 && !prev[0].description && !prev[0].amount;
+      return isBlank ? [newItem] : [...prev, newItem];
+    });
+    setSelectedProjectId("");
   }
 
   function removeItem(idx: number) {
@@ -366,6 +395,32 @@ export function InvoiceIssueClient({
 
           <div>
             <label className={labelClass}>明細</label>
+
+            {projects.length > 0 && (
+              <div className="mb-2 flex flex-wrap items-center gap-2">
+                <select
+                  className={`${inputClass} w-auto flex-1`}
+                  value={selectedProjectId}
+                  onChange={(e) => setSelectedProjectId(e.target.value)}
+                >
+                  <option value="">-- 案件から明細を追加 --</option>
+                  {projects.map((p) => (
+                    <option key={p.id} value={p.id}>
+                      {p.name}（実績 {p.actual_quantity}件 × ¥{p.unit_price.toLocaleString("ja-JP")}）
+                    </option>
+                  ))}
+                </select>
+                <button
+                  type="button"
+                  onClick={addItemFromProject}
+                  disabled={!selectedProjectId}
+                  className="rounded-md border border-slate-200 px-3 py-2 text-sm text-slate-600 hover:bg-slate-100 disabled:opacity-50"
+                >
+                  ＋ 追加
+                </button>
+              </div>
+            )}
+
             <div className="overflow-hidden rounded-lg border border-slate-200">
               <table className="text-sm" style={{ minWidth: 600 }}>
                 <thead className="bg-slate-50">
