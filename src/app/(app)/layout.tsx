@@ -50,12 +50,12 @@ export default async function AppLayout({ children }: { children: React.ReactNod
           </div>
 
           <div className="flex items-center gap-3">
-            <span className="text-sm text-slate-500">
+            <Link href="/profile" className="text-sm text-slate-500 hover:text-slate-900 hover:underline">
               {profile.name}
               <span className="ml-1 rounded bg-slate-100 px-1.5 py-0.5 text-xs text-slate-500">
                 {profile.role === "admin" ? "管理者" : "担当者"}
               </span>
-            </span>
+            </Link>
             <form action={logout}>
               <button
                 type="submit"
