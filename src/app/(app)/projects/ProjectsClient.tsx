@@ -39,6 +39,16 @@ export function ProjectsClient({
   const [staffId, setStaffId] = useState("");
   const [status, setStatus] = useState<ProjectStatus | "">("");
   const [monthTab, setMonthTab] = useState("all");
+  const [expanded, setExpanded] = useState<Set<string>>(new Set());
+
+  function toggleExpanded(id: string) {
+    setExpanded((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }
 
   const monthTabs = useMemo(() => {
     const set = new Set(projects.map((p) => p.start_date.slice(0, 7)));
@@ -183,7 +193,19 @@ export function ProjectsClient({
               return (
                 <Fragment key={p.id}>
                   <tr className="hover:bg-slate-50">
-                    <td className="px-3 py-2 font-medium text-slate-800">{p.name}</td>
+                    <td className="px-3 py-2 font-medium text-slate-800">
+                      {hasRates && (
+                        <button
+                          type="button"
+                          onClick={() => toggleExpanded(p.id)}
+                          className="mr-1.5 inline-block w-3 text-xs text-slate-400 hover:text-slate-700"
+                          aria-label={expanded.has(p.id) ? "料金表の内訳を閉じる" : "料金表の内訳を開く"}
+                        >
+                          {expanded.has(p.id) ? "▼" : "▶"}
+                        </button>
+                      )}
+                      {p.name}
+                    </td>
                     <td className="px-3 py-2 text-slate-600">{p.staff?.name ?? "-"}</td>
                     <td className="px-3 py-2 whitespace-nowrap text-slate-600">
                       {p.start_date}
@@ -260,6 +282,7 @@ export function ProjectsClient({
                     </td>
                   </tr>
                   {hasRates &&
+                    expanded.has(p.id) &&
                     rates.map((r) => {
                       const rBudget = r.unit_price * r.quantity;
                       const rActual = r.unit_price * r.actual_quantity;
