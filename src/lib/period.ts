@@ -85,3 +85,25 @@ export function filterByExactMonth<T>(rows: T[], yearMonth: string, getDate: (ro
 export function formatYearMonth(yearMonth: string): string {
   return `${yearMonth.slice(0, 4)}年${Number(yearMonth.slice(5, 7))}月`;
 }
+
+// 半開区間 [start, end) に含まれる "YYYY-MM" の一覧を返す（月の繰り返し集計用）。
+// start/end のどちらかが null（無制限）の場合は呼び出し側で個別対応する前提で空配列を返す。
+export function monthKeysInRange(start: string | null, end: string | null): string[] {
+  if (!start || !end) return [];
+
+  const keys: string[] = [];
+  let year = Number(start.slice(0, 4));
+  let month = Number(start.slice(5, 7));
+  const endKey = end.slice(0, 7);
+  let key = `${year}-${pad2(month)}`;
+
+  while (key < endKey) {
+    keys.push(key);
+    const next = shiftMonth(year, month, 1);
+    year = next.year;
+    month = next.month;
+    key = `${year}-${pad2(month)}`;
+  }
+
+  return keys;
+}

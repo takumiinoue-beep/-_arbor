@@ -18,6 +18,7 @@ import {
   formatYearMonth,
   type PeriodTab,
 } from "@/lib/period";
+import { filterFixedCostsByPeriod, filterFixedCostsByExactMonth } from "@/lib/fixedCostPeriod";
 import { SummaryCard } from "@/components/SummaryCard";
 import { BudgetActualBarChart } from "@/components/charts/BudgetActualBarChart";
 import { MonthlyLineChart } from "@/components/charts/MonthlyLineChart";
@@ -57,9 +58,9 @@ export function DashboardClient({
   const filteredFixedCosts = useMemo(() => {
     if (isPastTab) {
       if (!selectedPastMonth) return [];
-      return filterByExactMonth(fixedCosts, selectedPastMonth, (f) => f.target_month);
+      return filterFixedCostsByExactMonth(fixedCosts, selectedPastMonth);
     }
-    return filterByPeriod(fixedCosts, tab, todayISO, (f) => f.target_month);
+    return filterFixedCostsByPeriod(fixedCosts, tab, todayISO);
   }, [fixedCosts, tab, todayISO, isPastTab, selectedPastMonth]);
 
   const budget = sumBudget(filteredProjects);
