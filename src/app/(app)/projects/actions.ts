@@ -191,6 +191,29 @@ export async function deleteProject(id: string) {
   revalidatePath("/dashboard");
 }
 
+const PROJECT_STATUSES: ProjectStatus[] = ["進行中", "完了", "中止"];
+
+export async function updateStatus(projectId: string, newStatus: ProjectStatus) {
+  await requireAdmin();
+
+  if (!PROJECT_STATUSES.includes(newStatus)) {
+    throw new Error("ステータスの値が不正です。");
+  }
+
+  const supabase = await createClient();
+  const { error } = await supabase
+    .from("projects")
+    .update({ status: newStatus })
+    .eq("id", projectId);
+
+  if (error) throw new Error(error.message);
+
+  revalidatePath("/projects");
+  revalidatePath("/dashboard");
+  revalidatePath("/staff-summary");
+  revalidatePath("/charts");
+}
+
 export async function updateQuantity(projectId: string, newQuantity: number) {
   await requireAdmin();
 

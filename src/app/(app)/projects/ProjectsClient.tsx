@@ -11,6 +11,7 @@ import { RateQuantityEditor } from "./RateQuantityEditor";
 import { RateActualEditor } from "./RateActualEditor";
 import { ConfirmedQuantityEditor } from "./ConfirmedQuantityEditor";
 import { RateConfirmedQuantityEditor } from "./RateConfirmedQuantityEditor";
+import { StatusEditor } from "./StatusEditor";
 import { DeleteProjectButton } from "./DeleteProjectButton";
 
 function rateRangeLabel(rate: PriceRate) {
@@ -289,17 +290,21 @@ export function ProjectsClient({
                       {formatPercent(p.actual, p.budget)}
                     </td>
                     <td className="px-3 py-2">
-                      <span
-                        className={`rounded-full px-2 py-0.5 text-xs ${
-                          p.status === "完了"
-                            ? "bg-emerald-100 text-emerald-700"
-                            : p.status === "中止"
-                              ? "bg-slate-200 text-slate-600"
-                              : "bg-blue-100 text-blue-700"
-                        }`}
-                      >
-                        {p.status}
-                      </span>
+                      {isAdmin ? (
+                        <StatusEditor projectId={p.id} status={p.status} />
+                      ) : (
+                        <span
+                          className={`rounded-full px-2 py-0.5 text-xs ${
+                            p.status === "完了"
+                              ? "bg-emerald-100 text-emerald-700"
+                              : p.status === "中止"
+                                ? "bg-slate-200 text-slate-600"
+                                : "bg-blue-100 text-blue-700"
+                          }`}
+                        >
+                          {p.status}
+                        </span>
+                      )}
                     </td>
                     <td className="max-w-[160px] truncate px-3 py-2 text-slate-500" title={p.notes ?? ""}>
                       {p.notes ?? ""}
