@@ -16,6 +16,15 @@ export function buildInvoiceHTML(
   const fmtNum = (n: number) => Math.round(n || 0).toLocaleString("ja-JP");
   const fmtYen = (n: number) => fmtNum(n) + "円";
 
+  // PDF保存時のファイル名はブラウザがdocument.titleから決めるため、
+  // 「◯月請求書_取引先名御中」になるようタイトルを組み立てる。
+  const escapeHtml = (s: string) =>
+    s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+  const month = form.date ? Number(form.date.slice(5, 7)) : null;
+  const titleParts = [month ? `${month}月請求書` : "請求書"];
+  if (clientName) titleParts.push(`${clientName}御中`);
+  const pageTitle = escapeHtml(titleParts.join("_"));
+
   const ROW_COUNT = 15;
   const filledRows = items
     .map(
@@ -36,6 +45,7 @@ export function buildInvoiceHTML(
 <html lang="ja">
 <head>
 <meta charset="UTF-8">
+<title>${pageTitle}</title>
 <style>
   * { box-sizing: border-box; margin: 0; padding: 0; }
   body {
