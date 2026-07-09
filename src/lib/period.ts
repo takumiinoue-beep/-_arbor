@@ -1,18 +1,18 @@
 export type PeriodTab = "past" | "year" | "last_month" | "this_month" | "next_month";
 
-export const PERIOD_TABS: { key: PeriodTab; label: string }[] = [
-  { key: "past", label: "過去期間" },
-  { key: "year", label: "年間" },
-  { key: "last_month", label: "先月" },
-  { key: "this_month", label: "当月" },
-  { key: "next_month", label: "来月" },
+export const PERIOD_TABS: { key: PeriodTab }[] = [
+  { key: "past" },
+  { key: "year" },
+  { key: "last_month" },
+  { key: "this_month" },
+  { key: "next_month" },
 ];
 
 function pad2(n: number): string {
   return String(n).padStart(2, "0");
 }
 
-function shiftMonth(year: number, month: number, delta: number): { year: number; month: number } {
+export function shiftMonth(year: number, month: number, delta: number): { year: number; month: number } {
   const d = new Date(Date.UTC(year, month - 1 + delta, 1));
   return { year: d.getUTCFullYear(), month: d.getUTCMonth() + 1 };
 }
@@ -48,6 +48,26 @@ export function getPeriodRange(
       return { start: `${year}-01-01`, end: `${year + 1}-01-01` };
     case "past":
       return { start: null, end: monthStart(year, month) };
+  }
+}
+
+// 先月・当月・来月は「⚪︎月」という実際の月番号で表示する（案件一覧の月タブと表記を揃える）。
+// 過去期間・年間はそのままのラベル。
+export function getPeriodTabLabel(tab: PeriodTab, todayISO: string): string {
+  const year = Number(todayISO.slice(0, 4));
+  const month = Number(todayISO.slice(5, 7));
+
+  switch (tab) {
+    case "past":
+      return "過去期間";
+    case "year":
+      return "年間";
+    case "last_month":
+      return `${shiftMonth(year, month, -1).month}月`;
+    case "this_month":
+      return `${month}月`;
+    case "next_month":
+      return `${shiftMonth(year, month, 1).month}月`;
   }
 }
 

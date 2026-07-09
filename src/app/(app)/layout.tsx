@@ -5,13 +5,10 @@ import { logout } from "@/app/login/actions";
 const navItems = [
   { href: "/dashboard", label: "ダッシュボード" },
   { href: "/projects", label: "案件一覧" },
-  { href: "/staff-summary", label: "担当者別集計" },
-  { href: "/charts", label: "グラフ" },
   { href: "/fixed-costs", label: "固定費管理" },
 ];
 
 const adminNavItems = [
-  { href: "/staff", label: "担当者管理" },
   { href: "/invoices/issue", label: "請求書発行" },
   { href: "/invoices/clients", label: "取引先" },
   { href: "/invoices/company", label: "自社情報" },

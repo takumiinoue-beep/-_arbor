@@ -210,8 +210,6 @@ export async function updateStatus(projectId: string, newStatus: ProjectStatus) 
 
   revalidatePath("/projects");
   revalidatePath("/dashboard");
-  revalidatePath("/staff-summary");
-  revalidatePath("/charts");
 }
 
 export async function updateQuantity(projectId: string, newQuantity: number) {
@@ -231,8 +229,6 @@ export async function updateQuantity(projectId: string, newQuantity: number) {
 
   revalidatePath("/projects");
   revalidatePath("/dashboard");
-  revalidatePath("/staff-summary");
-  revalidatePath("/charts");
 }
 
 export async function updateActual(projectId: string, newQuantity: number) {
@@ -247,8 +243,6 @@ export async function updateActual(projectId: string, newQuantity: number) {
 
   revalidatePath("/projects");
   revalidatePath("/dashboard");
-  revalidatePath("/staff-summary");
-  revalidatePath("/charts");
 }
 
 export async function updateRateQuantity(rateId: string, newQuantity: number) {
@@ -268,8 +262,6 @@ export async function updateRateQuantity(rateId: string, newQuantity: number) {
 
   revalidatePath("/projects");
   revalidatePath("/dashboard");
-  revalidatePath("/staff-summary");
-  revalidatePath("/charts");
 }
 
 export async function updateRateActual(rateId: string, newQuantity: number) {
@@ -284,8 +276,6 @@ export async function updateRateActual(rateId: string, newQuantity: number) {
 
   revalidatePath("/projects");
   revalidatePath("/dashboard");
-  revalidatePath("/staff-summary");
-  revalidatePath("/charts");
 }
 
 export async function updateConfirmedQuantity(projectId: string, newQuantity: number) {
@@ -305,8 +295,6 @@ export async function updateConfirmedQuantity(projectId: string, newQuantity: nu
 
   revalidatePath("/projects");
   revalidatePath("/dashboard");
-  revalidatePath("/staff-summary");
-  revalidatePath("/charts");
 }
 
 export async function updateRateConfirmedQuantity(rateId: string, newQuantity: number) {
@@ -326,6 +314,4 @@ export async function updateRateConfirmedQuantity(rateId: string, newQuantity: n
 
   revalidatePath("/projects");
   revalidatePath("/dashboard");
-  revalidatePath("/staff-summary");
-  revalidatePath("/charts");
 }

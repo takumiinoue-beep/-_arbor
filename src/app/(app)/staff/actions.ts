@@ -31,8 +31,8 @@ export async function createStaff(_prevState: FormState, formData: FormData) {
 
   if (error) return { error: `登録に失敗しました: ${error.message}` };
 
-  revalidatePath("/staff");
-  redirect("/staff");
+  revalidatePath("/invoices/company");
+  redirect("/invoices/company");
 }
 
 export async function updateStaff(id: string, _prevState: FormState, formData: FormData) {
@@ -52,9 +52,9 @@ export async function updateStaff(id: string, _prevState: FormState, formData: F
 
   if (error) return { error: `更新に失敗しました: ${error.message}` };
 
-  revalidatePath("/staff");
+  revalidatePath("/invoices/company");
   revalidatePath("/projects");
-  redirect("/staff");
+  redirect("/invoices/company");
 }
 
 export async function deleteStaff(id: string) {
@@ -63,6 +63,6 @@ export async function deleteStaff(id: string) {
   const { error } = await admin.auth.admin.deleteUser(id);
   if (error) throw new Error(error.message);
 
-  revalidatePath("/staff");
+  revalidatePath("/invoices/company");
   revalidatePath("/projects");
 }

@@ -98,7 +98,7 @@ export function StaffForm({
           {pending ? "保存中..." : mode === "create" ? "登録する" : "更新する"}
         </button>
         <Link
-          href="/staff"
+          href="/invoices/company"
           className="rounded-md border border-slate-200 px-4 py-2 text-sm text-slate-600 hover:bg-slate-100"
         >
           キャンセル

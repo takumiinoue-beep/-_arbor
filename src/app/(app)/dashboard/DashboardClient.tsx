@@ -9,6 +9,8 @@ import {
   sumActual,
   getEffectiveCounts,
   sumEffectiveCounts,
+  projectsGroupedByStaff,
+  computeStaffGroupBands,
 } from "@/lib/aggregate";
 import { formatCurrency, formatPercent } from "@/lib/format";
 import {
@@ -16,12 +18,15 @@ import {
   filterByPeriod,
   filterByExactMonth,
   formatYearMonth,
+  getPeriodTabLabel,
   type PeriodTab,
 } from "@/lib/period";
 import { filterFixedCostsByPeriod, filterFixedCostsByExactMonth } from "@/lib/fixedCostPeriod";
 import { SummaryCard } from "@/components/SummaryCard";
 import { BudgetActualBarChart } from "@/components/charts/BudgetActualBarChart";
 import { MonthlyLineChart } from "@/components/charts/MonthlyLineChart";
+import { StaffGroupedProjectBarChart } from "@/components/charts/StaffGroupedProjectBarChart";
+import { StaffSharePieChart } from "@/components/charts/StaffSharePieChart";
 
 export function DashboardClient({
   projects,
@@ -71,6 +76,8 @@ export function DashboardClient({
 
   const staffAgg = aggregateByStaff(filteredProjects);
   const monthlyAgg = aggregateByMonth(filteredProjects);
+  const staffProjectRows = useMemo(() => projectsGroupedByStaff(filteredProjects), [filteredProjects]);
+  const staffGroupBands = useMemo(() => computeStaffGroupBands(staffProjectRows), [staffProjectRows]);
 
   const projectRows = useMemo(
     () => [...filteredProjects].sort((a, b) => b.actual - a.actual),
@@ -91,7 +98,7 @@ export function DashboardClient({
                 : "border-transparent text-slate-500 hover:text-slate-700"
             }`}
           >
-            {t.label}
+            {getPeriodTabLabel(t.key, todayISO)}
           </button>
         ))}
       </div>
@@ -203,6 +210,60 @@ export function DashboardClient({
               )}
             </tbody>
           </table>
+        </div>
+      </div>
+
+      <div className="flex flex-col gap-4">
+        <h2 className="text-lg font-bold text-slate-900">担当者別集計</h2>
+        <div className="rounded-lg border border-slate-200 bg-white p-4">
+          <h3 className="mb-2 text-sm font-semibold text-slate-700">
+            担当者別 予算・実績比較（案件別内訳）
+          </h3>
+          <StaffGroupedProjectBarChart data={staffProjectRows} bands={staffGroupBands} />
+        </div>
+        <div className="overflow-x-auto rounded-lg border border-slate-200 bg-white">
+          <table className="min-w-full divide-y divide-slate-200 text-sm">
+            <thead className="bg-slate-50">
+              <tr>
+                <th className="px-3 py-2 text-left font-medium text-slate-500">担当者</th>
+                <th className="px-3 py-2 text-right font-medium text-slate-500">予算合計</th>
+                <th className="px-3 py-2 text-right font-medium text-slate-500">実績合計</th>
+                <th className="px-3 py-2 text-right font-medium text-slate-500">差異</th>
+                <th className="px-3 py-2 text-right font-medium text-slate-500">達成率</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-100">
+              {staffAgg.map((s) => {
+                const diff = s.actual - s.budget;
+                return (
+                  <tr key={s.staffId} className="hover:bg-slate-50">
+                    <td className="px-3 py-2 font-medium text-slate-800">{s.staffName}</td>
+                    <td className="px-3 py-2 text-right text-slate-700">{formatCurrency(s.budget)}</td>
+                    <td className="px-3 py-2 text-right text-slate-700">{formatCurrency(s.actual)}</td>
+                    <td className={`px-3 py-2 text-right ${diff >= 0 ? "text-emerald-600" : "text-red-600"}`}>
+                      {formatCurrency(diff)}
+                    </td>
+                    <td className="px-3 py-2 text-right text-slate-700">{formatPercent(s.actual, s.budget)}</td>
+                  </tr>
+                );
+              })}
+              {staffAgg.length === 0 && (
+                <tr>
+                  <td colSpan={5} className="px-3 py-6 text-center text-slate-400">
+                    この期間に該当するデータがありません
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <div className="flex flex-col gap-4">
+        <h2 className="text-lg font-bold text-slate-900">グラフ</h2>
+        <div className="rounded-lg border border-slate-200 bg-white p-4">
+          <h3 className="mb-2 text-sm font-semibold text-slate-700">担当者別 実績構成比</h3>
+          <StaffSharePieChart data={staffAgg} />
         </div>
       </div>
     </div>
