@@ -15,12 +15,12 @@ export function DeleteBankAccountButton({ id }: { id: number }) {
       onClick={() => {
         if (!confirm("この銀行口座を削除しますか？")) return;
         startTransition(async () => {
-          try {
-            await deleteBankAccount(id);
-            router.refresh();
-          } catch (e) {
-            alert(e instanceof Error ? `削除できませんでした: ${e.message}` : "削除できませんでした。");
+          const result = await deleteBankAccount(id);
+          if (result?.error) {
+            alert(`削除できませんでした: ${result.error}`);
+            return;
           }
+          router.refresh();
         });
       }}
       className="text-xs text-red-600 hover:underline disabled:opacity-50"

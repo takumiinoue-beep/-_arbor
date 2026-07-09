@@ -79,12 +79,18 @@ export async function createBankAccount(
   return null;
 }
 
-export async function deleteBankAccount(id: number) {
+export async function deleteBankAccount(id: number): Promise<{ error: string } | null> {
   await requireAdmin();
   const supabase = await createClient();
   const { error } = await supabase.from("company_bank_accounts").delete().eq("id", id);
-  if (error) throw new Error(error.message);
+  if (error) {
+    if (error.code === "23503") {
+      return { error: "この口座は請求書で使用されているため削除できません。請求書側の振込先を変更してから削除してください。" };
+    }
+    return { error: error.message };
+  }
 
   revalidatePath("/invoices/company");
   revalidatePath("/invoices/issue");
+  return null;
 }
