@@ -50,9 +50,9 @@ export function sumActual(projects: ProjectWithStaff[]): number {
   return projects.reduce((sum, p) => sum + p.actual, 0);
 }
 
-export type EffectiveCounts = { actualQty: number; confirmedQty: number };
+export type EffectiveCounts = { actualQty: number; confirmedQty: number; confirmedAmount: number };
 
-// 実績件数・確定件数を返す。料金表の行がある案件は行ごとの合計、
+// 実績件数・確定件数・確定金額を返す。料金表の行がある案件は行ごとの合計、
 // 無い案件は案件本体の値を使う（予算・実績件数と同じ考え方）。
 export function getEffectiveCounts(p: ProjectWithStaff): EffectiveCounts {
   const rates = p.price_rates;
@@ -60,9 +60,14 @@ export function getEffectiveCounts(p: ProjectWithStaff): EffectiveCounts {
     return {
       actualQty: rates.reduce((sum, r) => sum + r.actual_quantity, 0),
       confirmedQty: rates.reduce((sum, r) => sum + r.confirmed_quantity, 0),
+      confirmedAmount: rates.reduce((sum, r) => sum + r.unit_price * r.confirmed_quantity, 0),
     };
   }
-  return { actualQty: p.actual_quantity, confirmedQty: p.confirmed_quantity };
+  return {
+    actualQty: p.actual_quantity,
+    confirmedQty: p.confirmed_quantity,
+    confirmedAmount: p.unit_price * p.confirmed_quantity,
+  };
 }
 
 export function sumEffectiveCounts(projects: ProjectWithStaff[]): EffectiveCounts {
@@ -71,9 +76,10 @@ export function sumEffectiveCounts(projects: ProjectWithStaff[]): EffectiveCount
       const c = getEffectiveCounts(p);
       acc.actualQty += c.actualQty;
       acc.confirmedQty += c.confirmedQty;
+      acc.confirmedAmount += c.confirmedAmount;
       return acc;
     },
-    { actualQty: 0, confirmedQty: 0 }
+    { actualQty: 0, confirmedQty: 0, confirmedAmount: 0 }
   );
 }
 

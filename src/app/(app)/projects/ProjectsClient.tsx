@@ -86,14 +86,15 @@ export function ProjectsClient({
   const totals = useMemo(() => {
     return filtered.reduce(
       (acc, p) => {
-        const { actualQty, confirmedQty } = getEffectiveCounts(p);
+        const { actualQty, confirmedQty, confirmedAmount } = getEffectiveCounts(p);
         acc.budget += p.budget;
         acc.actual += p.actual;
         acc.actualQty += actualQty;
         acc.confirmedQty += confirmedQty;
+        acc.confirmedAmount += confirmedAmount;
         return acc;
       },
-      { budget: 0, actual: 0, actualQty: 0, confirmedQty: 0 }
+      { budget: 0, actual: 0, actualQty: 0, confirmedQty: 0, confirmedAmount: 0 }
     );
   }, [filtered]);
 
@@ -179,7 +180,7 @@ export function ProjectsClient({
       </div>
 
       <div className="overflow-x-auto rounded-lg border border-slate-200 bg-white">
-        <table className="min-w-full divide-y divide-slate-200 text-sm">
+        <table className="w-full min-w-[1600px] whitespace-nowrap divide-y divide-slate-200 text-sm">
           <thead className="bg-slate-50">
             <tr>
               <th className="px-3 py-2 text-left font-medium text-slate-500">案件名</th>
@@ -202,7 +203,11 @@ export function ProjectsClient({
               const canEditActual = isAdmin || p.staff_id === currentUserId;
               const rates = sortedRates(p.price_rates);
               const hasRates = rates.length > 0;
-              const { actualQty: totalActualQty, confirmedQty: totalConfirmedQty } = getEffectiveCounts(p);
+              const {
+                actualQty: totalActualQty,
+                confirmedQty: totalConfirmedQty,
+                confirmedAmount: totalConfirmedAmount,
+              } = getEffectiveCounts(p);
               return (
                 <Fragment key={p.id}>
                   <tr className="hover:bg-slate-50">
@@ -258,11 +263,18 @@ export function ProjectsClient({
                     </td>
                     <td className="px-3 py-2 text-right">
                       {hasRates ? (
-                        <span className="text-slate-700">{totalConfirmedQty}件</span>
+                        <span className="text-slate-700">{formatCurrency(totalConfirmedAmount)}</span>
                       ) : isAdmin ? (
-                        <ConfirmedQuantityEditor projectId={p.id} confirmedQuantity={p.confirmed_quantity} />
+                        <ConfirmedQuantityEditor
+                          projectId={p.id}
+                          confirmedQuantity={p.confirmed_quantity}
+                          unitPrice={p.unit_price}
+                        />
                       ) : (
-                        <span className="text-slate-700">{p.confirmed_quantity}件</span>
+                        <span className="text-slate-700">
+                          {formatCurrency(totalConfirmedAmount)}
+                          <span className="ml-1 text-xs text-slate-400">({p.confirmed_quantity}件)</span>
+                        </span>
                       )}
                     </td>
                     <td className="px-3 py-2 text-right text-slate-700">
@@ -346,9 +358,13 @@ export function ProjectsClient({
                               <RateConfirmedQuantityEditor
                                 rateId={r.id}
                                 confirmedQuantity={r.confirmed_quantity}
+                                unitPrice={r.unit_price}
                               />
                             ) : (
-                              <span className="text-slate-500">{r.confirmed_quantity}件</span>
+                              <span className="text-slate-500">
+                                {formatCurrency(r.unit_price * r.confirmed_quantity)}
+                                <span className="ml-1 text-slate-400">({r.confirmed_quantity}件)</span>
+                              </span>
                             )}
                           </td>
                           <td className="px-3 py-1.5 text-right text-slate-500">
@@ -385,7 +401,10 @@ export function ProjectsClient({
                 </td>
                 <td className="px-3 py-2 text-right">{formatCurrency(totals.budget)}</td>
                 <td className="px-3 py-2 text-right">{formatCurrency(totals.actual)}</td>
-                <td className="px-3 py-2 text-right">{totals.confirmedQty}件</td>
+                <td className="px-3 py-2 text-right">
+                  {formatCurrency(totals.confirmedAmount)}
+                  <span className="ml-1 text-xs text-slate-400">({totals.confirmedQty}件)</span>
+                </td>
                 <td className="px-3 py-2 text-right">
                   {formatPercent(totals.confirmedQty, totals.actualQty)}
                 </td>
