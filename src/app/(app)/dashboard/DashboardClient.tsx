@@ -160,21 +160,30 @@ export function DashboardClient({
                 <th className="px-3 py-2 text-left font-medium text-slate-500">担当者</th>
                 <th className="px-3 py-2 text-right font-medium text-slate-500">予算</th>
                 <th className="px-3 py-2 text-right font-medium text-slate-500">実績</th>
-                <th className="px-3 py-2 text-right font-medium text-slate-500">確定件数</th>
+                <th className="px-3 py-2 text-right font-medium text-slate-500">確定金額</th>
                 <th className="px-3 py-2 text-right font-medium text-slate-500">有効率</th>
                 <th className="px-3 py-2 text-right font-medium text-slate-500">達成率</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
               {projectRows.map((p) => {
-                const { actualQty, confirmedQty } = getEffectiveCounts(p);
+                const { budgetQty, actualQty, confirmedQty, confirmedAmount } = getEffectiveCounts(p);
                 return (
                   <tr key={p.id} className="hover:bg-slate-50">
                     <td className="px-3 py-2 font-medium text-slate-800">{p.name}</td>
                     <td className="px-3 py-2 text-slate-600">{p.staff?.name ?? "-"}</td>
-                    <td className="px-3 py-2 text-right text-slate-700">{formatCurrency(p.budget)}</td>
-                    <td className="px-3 py-2 text-right text-slate-700">{formatCurrency(p.actual)}</td>
-                    <td className="px-3 py-2 text-right text-slate-700">{confirmedQty}件</td>
+                    <td className="px-3 py-2 text-right text-slate-700">
+                      {formatCurrency(p.budget)}
+                      <span className="ml-1 text-xs text-slate-400">({budgetQty}件)</span>
+                    </td>
+                    <td className="px-3 py-2 text-right text-slate-700">
+                      {formatCurrency(p.actual)}
+                      <span className="ml-1 text-xs text-slate-400">({actualQty}件)</span>
+                    </td>
+                    <td className="px-3 py-2 text-right text-slate-700">
+                      {formatCurrency(confirmedAmount)}
+                      <span className="ml-1 text-xs text-slate-400">({confirmedQty}件)</span>
+                    </td>
                     <td className="px-3 py-2 text-right text-slate-700">
                       {formatPercent(confirmedQty, actualQty)}
                     </td>
