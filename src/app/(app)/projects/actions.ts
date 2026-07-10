@@ -16,6 +16,7 @@ type PriceRateInput = {
   quantity: number;
   actual_quantity: number;
   confirmed_quantity: number;
+  sort_order: number;
 };
 
 function parsePriceRateRows(raw: string): { ok: true; value: PriceRateInput[] } | { ok: false; error: string } {
@@ -67,6 +68,7 @@ function parsePriceRateRows(raw: string): { ok: true; value: PriceRateInput[] } 
       quantity,
       actual_quantity: actualQuantity,
       confirmed_quantity: confirmedQuantity,
+      sort_order: parsed.length,
     });
   }
 

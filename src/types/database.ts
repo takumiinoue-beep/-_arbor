@@ -65,6 +65,7 @@ export type PriceRate = {
   quantity: number;
   actual_quantity: number;
   confirmed_quantity: number;
+  sort_order: number;
   created_at: string;
 };
 

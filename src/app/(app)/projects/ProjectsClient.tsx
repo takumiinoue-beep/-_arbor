@@ -22,10 +22,7 @@ function rateRangeLabel(rate: PriceRate) {
 
 function sortedRates(rates: PriceRate[] | undefined) {
   if (!rates) return [];
-  return [...rates].sort((a, b) => {
-    if (a.position !== b.position) return a.position.localeCompare(b.position);
-    return a.employee_min - b.employee_min;
-  });
+  return [...rates].sort((a, b) => a.sort_order - b.sort_order);
 }
 
 export function ProjectsClient({
