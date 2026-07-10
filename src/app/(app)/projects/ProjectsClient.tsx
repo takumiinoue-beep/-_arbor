@@ -287,7 +287,7 @@ export function ProjectsClient({
                       {formatCurrency(diff)}
                     </td>
                     <td className="px-3 py-2 text-right text-slate-700">
-                      {formatPercent(p.actual, p.budget)}
+                      {formatPercent(totalConfirmedAmount, p.budget)}
                     </td>
                     <td className="px-3 py-2">
                       {isAdmin ? (
@@ -328,6 +328,7 @@ export function ProjectsClient({
                     rates.map((r) => {
                       const rBudget = r.unit_price * r.quantity;
                       const rActual = r.unit_price * r.actual_quantity;
+                      const rConfirmedAmount = r.unit_price * r.confirmed_quantity;
                       const rDiff = rActual - rBudget;
                       return (
                         <tr key={r.id} className="bg-slate-50/60 text-xs">
@@ -367,7 +368,7 @@ export function ProjectsClient({
                               />
                             ) : (
                               <span className="text-slate-500">
-                                {formatCurrency(r.unit_price * r.confirmed_quantity)}
+                                {formatCurrency(rConfirmedAmount)}
                                 <span className="ml-1 text-slate-400">({r.confirmed_quantity}件)</span>
                               </span>
                             )}
@@ -381,7 +382,7 @@ export function ProjectsClient({
                             {formatCurrency(rDiff)}
                           </td>
                           <td className="px-3 py-1.5 text-right text-slate-500">
-                            {formatPercent(rActual, rBudget)}
+                            {formatPercent(rConfirmedAmount, rBudget)}
                           </td>
                           <td colSpan={3} />
                         </tr>
@@ -421,7 +422,7 @@ export function ProjectsClient({
                   {formatCurrency(totals.actual - totals.budget)}
                 </td>
                 <td className="px-3 py-2 text-right">
-                  {formatPercent(totals.actual, totals.budget)}
+                  {formatPercent(totals.confirmedAmount, totals.budget)}
                 </td>
                 <td colSpan={3} />
               </tr>

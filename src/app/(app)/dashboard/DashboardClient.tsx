@@ -72,7 +72,11 @@ export function DashboardClient({
   const actual = sumActual(filteredProjects);
   const fixedCostTotal = filteredFixedCosts.reduce((sum, f) => sum + f.amount, 0);
   const grossProfit = actual - fixedCostTotal;
-  const { actualQty: totalActualQty, confirmedQty: totalConfirmedQty } = sumEffectiveCounts(filteredProjects);
+  const {
+    actualQty: totalActualQty,
+    confirmedQty: totalConfirmedQty,
+    confirmedAmount: totalConfirmedAmount,
+  } = sumEffectiveCounts(filteredProjects);
 
   const staffAgg = aggregateByStaff(filteredProjects);
   const monthlyAgg = aggregateByMonth(filteredProjects);
@@ -128,9 +132,9 @@ export function DashboardClient({
         <SummaryCard label="予算合計" value={formatCurrency(budget)} />
         <SummaryCard label="実績合計" value={formatCurrency(actual)} />
         <SummaryCard
-          label="達成率"
-          value={formatPercent(actual, budget)}
-          tone={actual >= budget ? "positive" : "negative"}
+          label="達成率（確定金額÷予算）"
+          value={formatPercent(totalConfirmedAmount, budget)}
+          tone={totalConfirmedAmount >= budget ? "positive" : "negative"}
         />
         <SummaryCard label="固定費合計" value={formatCurrency(fixedCostTotal)} />
         <SummaryCard
@@ -196,7 +200,7 @@ export function DashboardClient({
                       {formatPercent(confirmedQty, actualQty)}
                     </td>
                     <td className="px-3 py-2 text-right text-slate-700">
-                      {formatPercent(p.actual, p.budget)}
+                      {formatPercent(confirmedAmount, p.budget)}
                     </td>
                   </tr>
                 );
@@ -243,7 +247,9 @@ export function DashboardClient({
                     <td className={`px-3 py-2 text-right ${diff >= 0 ? "text-emerald-600" : "text-red-600"}`}>
                       {formatCurrency(diff)}
                     </td>
-                    <td className="px-3 py-2 text-right text-slate-700">{formatPercent(s.actual, s.budget)}</td>
+                    <td className="px-3 py-2 text-right text-slate-700">
+                      {formatPercent(s.confirmedAmount, s.budget)}
+                    </td>
                   </tr>
                 );
               })}

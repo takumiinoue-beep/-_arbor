@@ -5,6 +5,7 @@ export type StaffAggregate = {
   staffName: string;
   budget: number;
   actual: number;
+  confirmedAmount: number;
 };
 
 export function aggregateByStaff(projects: ProjectWithStaff[]): StaffAggregate[] {
@@ -13,9 +14,10 @@ export function aggregateByStaff(projects: ProjectWithStaff[]): StaffAggregate[]
   for (const p of projects) {
     const staffId = p.staff_id ?? "unknown";
     const staffName = p.staff?.name ?? "未割当";
-    const entry = map.get(staffId) ?? { staffId, staffName, budget: 0, actual: 0 };
+    const entry = map.get(staffId) ?? { staffId, staffName, budget: 0, actual: 0, confirmedAmount: 0 };
     entry.budget += p.budget;
     entry.actual += p.actual;
+    entry.confirmedAmount += getEffectiveCounts(p).confirmedAmount;
     map.set(staffId, entry);
   }
 
