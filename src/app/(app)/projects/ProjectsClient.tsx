@@ -230,10 +230,10 @@ export function ProjectsClient({
                     </td>
                     <td className="px-3 py-2 text-right">
                       {hasRates ? (
-                        <span className="text-slate-700">
-                          {formatCurrency(p.budget)}
-                          <span className="ml-1 text-xs text-slate-400">({totalBudgetQty}件)</span>
-                        </span>
+                        <div className="flex items-center gap-1">
+                          <span className="text-slate-700">{totalBudgetQty}件</span>
+                          <span className="text-xs text-slate-400">→ {formatCurrency(p.budget)}</span>
+                        </div>
                       ) : isAdmin ? (
                         <TargetQuantityEditor
                           projectId={p.id}
@@ -249,10 +249,10 @@ export function ProjectsClient({
                     </td>
                     <td className="px-3 py-2 text-right">
                       {hasRates ? (
-                        <span className="text-slate-700">
-                          {formatCurrency(p.actual)}
-                          <span className="ml-1 text-xs text-slate-400">({totalActualQty}件)</span>
-                        </span>
+                        <div className="flex items-center gap-1">
+                          <span className="text-slate-700">{totalActualQty}件</span>
+                          <span className="text-xs text-slate-400">→ {formatCurrency(p.actual)}</span>
+                        </div>
                       ) : canEditActual ? (
                         <ActualEditor
                           projectId={p.id}
@@ -268,10 +268,10 @@ export function ProjectsClient({
                     </td>
                     <td className="px-3 py-2 text-right">
                       {hasRates ? (
-                        <span className="text-slate-700">
-                          {formatCurrency(totalConfirmedAmount)}
-                          <span className="ml-1 text-xs text-slate-400">({totalConfirmedQty}件)</span>
-                        </span>
+                        <div className="flex items-center gap-1">
+                          <span className="text-slate-700">{totalConfirmedQty}件</span>
+                          <span className="text-xs text-slate-400">→ {formatCurrency(totalConfirmedAmount)}</span>
+                        </div>
                       ) : isAdmin ? (
                         <ConfirmedQuantityEditor
                           projectId={p.id}
