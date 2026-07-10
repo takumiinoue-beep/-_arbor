@@ -84,15 +84,16 @@ export function ProjectsClient({
   const totals = useMemo(() => {
     return filtered.reduce(
       (acc, p) => {
-        const { actualQty, confirmedQty, confirmedAmount } = getEffectiveCounts(p);
+        const { budgetQty, actualQty, confirmedQty, confirmedAmount } = getEffectiveCounts(p);
         acc.budget += p.budget;
         acc.actual += p.actual;
+        acc.budgetQty += budgetQty;
         acc.actualQty += actualQty;
         acc.confirmedQty += confirmedQty;
         acc.confirmedAmount += confirmedAmount;
         return acc;
       },
-      { budget: 0, actual: 0, actualQty: 0, confirmedQty: 0, confirmedAmount: 0 }
+      { budget: 0, actual: 0, budgetQty: 0, actualQty: 0, confirmedQty: 0, confirmedAmount: 0 }
     );
   }, [filtered]);
 
@@ -412,11 +413,23 @@ export function ProjectsClient({
                 <td className="px-3 py-2" colSpan={3}>
                   合計（{filtered.length}件）
                 </td>
-                <td className="px-3 py-2 text-right">{formatCurrency(totals.budget)}</td>
-                <td className="px-3 py-2 text-right">{formatCurrency(totals.actual)}</td>
                 <td className="px-3 py-2 text-right">
-                  {formatCurrency(totals.confirmedAmount)}
-                  <span className="ml-1 text-xs text-slate-400">({totals.confirmedQty}件)</span>
+                  <div className="flex items-center gap-1">
+                    <span>{totals.budgetQty}件</span>
+                    <span className="ml-auto">{formatCurrency(totals.budget)}</span>
+                  </div>
+                </td>
+                <td className="px-3 py-2 text-right">
+                  <div className="flex items-center gap-1">
+                    <span>{totals.actualQty}件</span>
+                    <span className="ml-auto">{formatCurrency(totals.actual)}</span>
+                  </div>
+                </td>
+                <td className="px-3 py-2 text-right">
+                  <div className="flex items-center gap-1">
+                    <span>{totals.confirmedQty}件</span>
+                    <span className="ml-auto">{formatCurrency(totals.confirmedAmount)}</span>
+                  </div>
                 </td>
                 <td className="px-3 py-2 text-right">
                   {formatPercent(totals.confirmedQty, totals.actualQty)}
