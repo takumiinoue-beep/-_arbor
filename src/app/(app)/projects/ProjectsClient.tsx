@@ -232,7 +232,7 @@ export function ProjectsClient({
                       {hasRates ? (
                         <div className="flex items-center gap-1">
                           <span className="text-slate-700">{totalBudgetQty}件</span>
-                          <span className="text-xs text-slate-400">→ {formatCurrency(p.budget)}</span>
+                          <span className="ml-auto text-xs text-slate-400">{formatCurrency(p.budget)}</span>
                         </div>
                       ) : isAdmin ? (
                         <TargetQuantityEditor
@@ -251,7 +251,7 @@ export function ProjectsClient({
                       {hasRates ? (
                         <div className="flex items-center gap-1">
                           <span className="text-slate-700">{totalActualQty}件</span>
-                          <span className="text-xs text-slate-400">→ {formatCurrency(p.actual)}</span>
+                          <span className="ml-auto text-xs text-slate-400">{formatCurrency(p.actual)}</span>
                         </div>
                       ) : canEditActual ? (
                         <ActualEditor
@@ -270,7 +270,7 @@ export function ProjectsClient({
                       {hasRates ? (
                         <div className="flex items-center gap-1">
                           <span className="text-slate-700">{totalConfirmedQty}件</span>
-                          <span className="text-xs text-slate-400">→ {formatCurrency(totalConfirmedAmount)}</span>
+                          <span className="ml-auto text-xs text-slate-400">{formatCurrency(totalConfirmedAmount)}</span>
                         </div>
                       ) : isAdmin ? (
                         <ConfirmedQuantityEditor

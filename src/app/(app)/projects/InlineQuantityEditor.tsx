@@ -59,11 +59,12 @@ export function InlineQuantityEditor({
           }}
           className="w-16 rounded border border-slate-300 px-1.5 py-0.5 text-sm disabled:opacity-50"
         />
-        <span className="text-xs text-slate-400">
-          件
-          {unitPrice !== undefined &&
-            ` → ${formatCurrency(unitPrice * (previewValid ? previewQuantity : quantity))}`}
-        </span>
+        <span className="text-xs text-slate-400">件</span>
+        {unitPrice !== undefined && (
+          <span className="ml-auto text-xs text-slate-400">
+            {formatCurrency(unitPrice * (previewValid ? previewQuantity : quantity))}
+          </span>
+        )}
       </div>
       {error && <p className="text-xs text-red-600">{error}</p>}
     </div>
