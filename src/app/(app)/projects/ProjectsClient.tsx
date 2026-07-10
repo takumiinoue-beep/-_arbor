@@ -202,6 +202,7 @@ export function ProjectsClient({
               const rates = sortedRates(p.price_rates);
               const hasRates = rates.length > 0;
               const {
+                budgetQty: totalBudgetQty,
                 actualQty: totalActualQty,
                 confirmedQty: totalConfirmedQty,
                 confirmedAmount: totalConfirmedAmount,
@@ -229,7 +230,10 @@ export function ProjectsClient({
                     </td>
                     <td className="px-3 py-2 text-right">
                       {hasRates ? (
-                        <span className="text-slate-700">{formatCurrency(p.budget)}</span>
+                        <span className="text-slate-700">
+                          {formatCurrency(p.budget)}
+                          <span className="ml-1 text-xs text-slate-400">({totalBudgetQty}件)</span>
+                        </span>
                       ) : isAdmin ? (
                         <TargetQuantityEditor
                           projectId={p.id}
@@ -245,7 +249,10 @@ export function ProjectsClient({
                     </td>
                     <td className="px-3 py-2 text-right">
                       {hasRates ? (
-                        <span className="text-slate-700">{formatCurrency(p.actual)}</span>
+                        <span className="text-slate-700">
+                          {formatCurrency(p.actual)}
+                          <span className="ml-1 text-xs text-slate-400">({totalActualQty}件)</span>
+                        </span>
                       ) : canEditActual ? (
                         <ActualEditor
                           projectId={p.id}
@@ -261,7 +268,10 @@ export function ProjectsClient({
                     </td>
                     <td className="px-3 py-2 text-right">
                       {hasRates ? (
-                        <span className="text-slate-700">{formatCurrency(totalConfirmedAmount)}</span>
+                        <span className="text-slate-700">
+                          {formatCurrency(totalConfirmedAmount)}
+                          <span className="ml-1 text-xs text-slate-400">({totalConfirmedQty}件)</span>
+                        </span>
                       ) : isAdmin ? (
                         <ConfirmedQuantityEditor
                           projectId={p.id}
