@@ -128,9 +128,10 @@ export function DashboardClient({
         </div>
       )}
 
-      <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-6">
+      <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-7">
         <SummaryCard label="予算合計" value={formatCurrency(budget)} />
         <SummaryCard label="実績合計" value={formatCurrency(actual)} />
+        <SummaryCard label="確定合計" value={formatCurrency(totalConfirmedAmount)} />
         <SummaryCard
           label="達成率（確定金額÷予算）"
           value={formatPercent(totalConfirmedAmount, budget)}
