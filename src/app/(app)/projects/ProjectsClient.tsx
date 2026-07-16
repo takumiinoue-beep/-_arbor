@@ -25,6 +25,9 @@ function sortedRates(rates: PriceRate[] | undefined) {
   return [...rates].sort((a, b) => a.sort_order - b.sort_order);
 }
 
+// 進行中を上、完了を下に表示する（中止はその間）
+const STATUS_ORDER: Record<ProjectStatus, number> = { 進行中: 0, 中止: 1, 完了: 2 };
+
 export function ProjectsClient({
   projects,
   staffList,
@@ -67,18 +70,20 @@ export function ProjectsClient({
   );
 
   const filtered = useMemo(() => {
-    return projects.filter((p) => {
-      if (keyword) {
-        const k = keyword.toLowerCase();
-        const hit =
-          p.name.toLowerCase().includes(k) || (p.staff?.name ?? "").toLowerCase().includes(k);
-        if (!hit) return false;
-      }
-      if (staffId && p.staff_id !== staffId) return false;
-      if (status && p.status !== status) return false;
-      if (monthTab !== "all" && p.start_date.slice(0, 7) !== monthTab) return false;
-      return true;
-    });
+    return projects
+      .filter((p) => {
+        if (keyword) {
+          const k = keyword.toLowerCase();
+          const hit =
+            p.name.toLowerCase().includes(k) || (p.staff?.name ?? "").toLowerCase().includes(k);
+          if (!hit) return false;
+        }
+        if (staffId && p.staff_id !== staffId) return false;
+        if (status && p.status !== status) return false;
+        if (monthTab !== "all" && p.start_date.slice(0, 7) !== monthTab) return false;
+        return true;
+      })
+      .sort((a, b) => STATUS_ORDER[a.status] - STATUS_ORDER[b.status]);
   }, [projects, keyword, staffId, status, monthTab]);
 
   const totals = useMemo(() => {
