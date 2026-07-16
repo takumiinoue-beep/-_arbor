@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import type { FixedCost, ProjectWithStaff } from "@/types/database";
+import type { Acquisition, FixedCost, ProjectWithStaff } from "@/types/database";
 import {
   aggregateByStaff,
   aggregateByMonth,
@@ -27,14 +27,17 @@ import { BudgetActualBarChart } from "@/components/charts/BudgetActualBarChart";
 import { MonthlyLineChart } from "@/components/charts/MonthlyLineChart";
 import { StaffGroupedProjectBarChart } from "@/components/charts/StaffGroupedProjectBarChart";
 import { StaffSharePieChart } from "@/components/charts/StaffSharePieChart";
+import { AcquisitionButton } from "./AcquisitionButton";
 
 export function DashboardClient({
   projects,
   fixedCosts,
+  acquisitions,
   todayISO,
 }: {
   projects: ProjectWithStaff[];
   fixedCosts: FixedCost[];
+  acquisitions: Acquisition[];
   todayISO: string;
 }) {
   const [tab, setTab] = useState<PeriodTab>("this_month");
@@ -77,6 +80,25 @@ export function DashboardClient({
     confirmedQty: totalConfirmedQty,
     confirmedAmount: totalConfirmedAmount,
   } = sumEffectiveCounts(filteredProjects);
+
+  const filteredAcquisitions = useMemo(() => {
+    if (isPastTab) {
+      if (!selectedPastMonth) return [];
+      return filterByExactMonth(acquisitions, selectedPastMonth, (a) => a.acquired_date);
+    }
+    return filterByPeriod(acquisitions, tab, todayISO, (a) => a.acquired_date);
+  }, [acquisitions, tab, todayISO, isPastTab, selectedPastMonth]);
+
+  const dailyAcquisitions = useMemo(() => {
+    const map = new Map<string, { date: string; count: number; amount: number }>();
+    for (const a of filteredAcquisitions) {
+      const entry = map.get(a.acquired_date) ?? { date: a.acquired_date, count: 0, amount: 0 };
+      entry.count += 1;
+      entry.amount += a.amount;
+      map.set(a.acquired_date, entry);
+    }
+    return Array.from(map.values()).sort((a, b) => b.date.localeCompare(a.date));
+  }, [filteredAcquisitions]);
 
   const staffAgg = aggregateByStaff(filteredProjects);
   const monthlyAgg = aggregateByMonth(filteredProjects);
@@ -128,6 +150,10 @@ export function DashboardClient({
         </div>
       )}
 
+      <div className="flex justify-end">
+        <AcquisitionButton projects={projects} />
+      </div>
+
       <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-7">
         <SummaryCard label="予算合計" value={formatCurrency(budget)} />
         <SummaryCard label="実績合計" value={formatCurrency(actual)} />
@@ -148,6 +174,50 @@ export function DashboardClient({
       <p className="-mt-3 text-xs text-slate-400">
         ※ 案件は開始日、固定費は対象年月をもとに選択中の期間で絞り込んでいます。固定費合計はその期間に該当する固定費の単純合計です。
       </p>
+
+      <div className="rounded-lg border border-slate-200 bg-white p-4">
+        <h2 className="mb-2 text-sm font-semibold text-slate-700">デイリー獲得件数・金額</h2>
+        <div className="overflow-x-auto">
+          <table className="min-w-full divide-y divide-slate-200 text-sm">
+            <thead className="bg-slate-50">
+              <tr>
+                <th className="px-3 py-2 text-left font-medium text-slate-500">日付</th>
+                <th className="px-3 py-2 text-right font-medium text-slate-500">獲得件数</th>
+                <th className="px-3 py-2 text-right font-medium text-slate-500">獲得金額</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-100">
+              {dailyAcquisitions.map((d) => (
+                <tr key={d.date} className="hover:bg-slate-50">
+                  <td className="px-3 py-2 text-slate-800">{d.date}</td>
+                  <td className="px-3 py-2 text-right text-slate-700">{d.count}件</td>
+                  <td className="px-3 py-2 text-right text-slate-700">{formatCurrency(d.amount)}</td>
+                </tr>
+              ))}
+              {dailyAcquisitions.length === 0 && (
+                <tr>
+                  <td colSpan={3} className="px-3 py-6 text-center text-slate-400">
+                    この期間の獲得記録がありません
+                  </td>
+                </tr>
+              )}
+            </tbody>
+            {dailyAcquisitions.length > 0 && (
+              <tfoot className="bg-slate-50 font-medium">
+                <tr>
+                  <td className="px-3 py-2">合計</td>
+                  <td className="px-3 py-2 text-right">
+                    {dailyAcquisitions.reduce((sum, d) => sum + d.count, 0)}件
+                  </td>
+                  <td className="px-3 py-2 text-right">
+                    {formatCurrency(dailyAcquisitions.reduce((sum, d) => sum + d.amount, 0))}
+                  </td>
+                </tr>
+              </tfoot>
+            )}
+          </table>
+        </div>
+      </div>
 
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
         <div className="rounded-lg border border-slate-200 bg-white p-4">

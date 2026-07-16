@@ -69,6 +69,18 @@ export type PriceRate = {
   created_at: string;
 };
 
+export type Acquisition = {
+  id: string;
+  acquired_date: string;
+  project_id: string;
+  position: string | null;
+  employee_count: number | null;
+  unit_price: number;
+  amount: number;
+  created_by: string | null;
+  created_at: string;
+};
+
 export type ClientType = "customer" | "supplier" | "other";
 export type InvoiceStatus = "unpaid" | "paid";
 

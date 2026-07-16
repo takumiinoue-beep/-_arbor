@@ -1,15 +1,16 @@
 import { requireProfile } from "@/lib/auth";
 import { createClient } from "@/lib/supabase/server";
-import type { FixedCost, ProjectWithStaff } from "@/types/database";
+import type { Acquisition, FixedCost, ProjectWithStaff } from "@/types/database";
 import { DashboardClient } from "./DashboardClient";
 
 export default async function DashboardPage() {
   await requireProfile();
   const supabase = await createClient();
 
-  const [{ data: projects }, { data: fixedCosts }] = await Promise.all([
+  const [{ data: projects }, { data: fixedCosts }, { data: acquisitions }] = await Promise.all([
     supabase.from("projects").select("*, staff:profiles!projects_staff_id_fkey(id, name), price_rates(*)"),
     supabase.from("fixed_costs").select("*"),
+    supabase.from("acquisitions").select("*").order("acquired_date", { ascending: false }),
   ]);
 
   const todayISO = new Date().toISOString().slice(0, 10);
@@ -20,6 +21,7 @@ export default async function DashboardPage() {
       <DashboardClient
         projects={(projects as ProjectWithStaff[]) ?? []}
         fixedCosts={(fixedCosts as FixedCost[]) ?? []}
+        acquisitions={(acquisitions as Acquisition[]) ?? []}
         todayISO={todayISO}
       />
     </div>
