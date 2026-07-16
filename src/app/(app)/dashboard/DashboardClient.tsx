@@ -27,6 +27,7 @@ import { BudgetActualBarChart } from "@/components/charts/BudgetActualBarChart";
 import { MonthlyLineChart } from "@/components/charts/MonthlyLineChart";
 import { StaffGroupedProjectBarChart } from "@/components/charts/StaffGroupedProjectBarChart";
 import { StaffSharePieChart } from "@/components/charts/StaffSharePieChart";
+import { DailyAcquisitionChart } from "@/components/charts/DailyAcquisitionChart";
 import { AcquisitionButton } from "./AcquisitionButton";
 
 export function DashboardClient({
@@ -99,6 +100,28 @@ export function DashboardClient({
     }
     return Array.from(map.values()).sort((a, b) => b.date.localeCompare(a.date));
   }, [filteredAcquisitions]);
+
+  // 期間タブに関わらず常に当月1日〜末日を表示するデイリーグラフ用データ（0件の日も含む）
+  const currentMonthDailyAcquisitions = useMemo(() => {
+    const year = Number(currentMonthKey.slice(0, 4));
+    const month = Number(currentMonthKey.slice(5, 7));
+    const daysInMonth = new Date(Date.UTC(year, month, 0)).getUTCDate();
+
+    const map = new Map<string, { count: number; amount: number }>();
+    for (const a of acquisitions) {
+      if (a.acquired_date.slice(0, 7) !== currentMonthKey) continue;
+      const entry = map.get(a.acquired_date) ?? { count: 0, amount: 0 };
+      entry.count += 1;
+      entry.amount += a.amount;
+      map.set(a.acquired_date, entry);
+    }
+
+    return Array.from({ length: daysInMonth }, (_, i) => {
+      const date = `${currentMonthKey}-${String(i + 1).padStart(2, "0")}`;
+      const entry = map.get(date) ?? { count: 0, amount: 0 };
+      return { date, count: entry.count, amount: entry.amount };
+    });
+  }, [acquisitions, currentMonthKey]);
 
   const staffAgg = aggregateByStaff(filteredProjects);
   const monthlyAgg = aggregateByMonth(filteredProjects);
@@ -217,6 +240,11 @@ export function DashboardClient({
             )}
           </table>
         </div>
+      </div>
+
+      <div className="rounded-lg border border-slate-200 bg-white p-4">
+        <h2 className="mb-2 text-sm font-semibold text-slate-700">デイリーグラフ（当月）</h2>
+        <DailyAcquisitionChart data={currentMonthDailyAcquisitions} />
       </div>
 
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
