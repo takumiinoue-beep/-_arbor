@@ -76,6 +76,7 @@ export type Acquisition = {
   position: string | null;
   employee_count: number | null;
   unit_price: number;
+  quantity: number;
   amount: number;
   created_by: string | null;
   created_at: string;

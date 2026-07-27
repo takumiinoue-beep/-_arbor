@@ -94,7 +94,7 @@ export function DashboardClient({
     const map = new Map<string, { date: string; count: number; amount: number }>();
     for (const a of filteredAcquisitions) {
       const entry = map.get(a.acquired_date) ?? { date: a.acquired_date, count: 0, amount: 0 };
-      entry.count += 1;
+      entry.count += a.quantity;
       entry.amount += a.amount;
       map.set(a.acquired_date, entry);
     }
@@ -111,7 +111,7 @@ export function DashboardClient({
     for (const a of acquisitions) {
       if (a.acquired_date.slice(0, 7) !== currentMonthKey) continue;
       const entry = map.get(a.acquired_date) ?? { count: 0, amount: 0 };
-      entry.count += 1;
+      entry.count += a.quantity;
       entry.amount += a.amount;
       map.set(a.acquired_date, entry);
     }

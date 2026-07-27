@@ -31,6 +31,7 @@ export function AcquisitionButton({ projects }: { projects: ProjectWithStaff[] }
   const [projectId, setProjectId] = useState("");
   const [position, setPosition] = useState("");
   const [employeeCount, setEmployeeCount] = useState("");
+  const [quantity, setQuantity] = useState("1");
 
   useEffect(() => {
     if (wasPending.current && !pending && !state?.error) {
@@ -39,6 +40,7 @@ export function AcquisitionButton({ projects }: { projects: ProjectWithStaff[] }
       setProjectId("");
       setPosition("");
       setEmployeeCount("");
+      setQuantity("1");
       router.refresh();
     }
     wasPending.current = pending;
@@ -59,6 +61,8 @@ export function AcquisitionButton({ projects }: { projects: ProjectWithStaff[] }
     ? findMatchingRate(selectedProject, position, employeeCount === "" ? null : Number(employeeCount))
     : undefined;
   const unitPrice = hasRates ? (matchedRate?.unit_price ?? null) : (selectedProject?.unit_price ?? null);
+  const quantityNum = Number(quantity) || 0;
+  const quantityValid = Number.isInteger(quantityNum) && quantityNum >= 1;
 
   return (
     <>
@@ -114,6 +118,22 @@ export function AcquisitionButton({ projects }: { projects: ProjectWithStaff[] }
             </select>
           </div>
 
+          <div className="flex flex-col gap-1">
+            <label className="text-sm font-medium text-slate-700">
+              件数 <span className="text-red-500">*</span>
+            </label>
+            <input
+              name="quantity"
+              type="number"
+              min={1}
+              step={1}
+              required
+              value={quantity}
+              onChange={(e) => setQuantity(e.target.value)}
+              className="w-32 rounded-md border border-slate-300 px-3 py-2 text-sm focus:border-slate-500 focus:outline-none"
+            />
+          </div>
+
           {hasRates && (
             <div className="grid grid-cols-2 gap-4">
               <div className="flex flex-col gap-1">
@@ -152,6 +172,15 @@ export function AcquisitionButton({ projects }: { projects: ProjectWithStaff[] }
             <span className="ml-1 font-semibold text-slate-900">
               {unitPrice !== null ? formatCurrency(unitPrice) : "未確定"}
             </span>
+            {unitPrice !== null && (
+              <>
+                <span className="mx-2 text-slate-300">|</span>
+                合計金額：
+                <span className="ml-1 font-semibold text-slate-900">
+                  {formatCurrency(unitPrice * (quantityValid ? quantityNum : 0))}
+                </span>
+              </>
+            )}
             {hasRates && unitPrice === null && projectId && (
               <p className="mt-1 text-xs text-red-600">
                 この案件の料金表に該当する役職・従業員数の設定がありません。
@@ -166,7 +195,7 @@ export function AcquisitionButton({ projects }: { projects: ProjectWithStaff[] }
           <div className="flex gap-3">
             <button
               type="submit"
-              disabled={pending || !projectId || unitPrice === null}
+              disabled={pending || !projectId || unitPrice === null || !quantityValid}
               className="rounded-md bg-slate-900 px-4 py-2 text-sm font-medium text-white hover:bg-slate-700 disabled:opacity-50"
             >
               {pending ? "登録中..." : "登録する"}

@@ -17,11 +17,15 @@ export async function createAcquisition(
   const position = String(formData.get("position") ?? "").trim();
   const employeeCountRaw = String(formData.get("employee_count") ?? "").trim();
   const unitPrice = Number(formData.get("unit_price") ?? 0);
+  const quantity = Number(formData.get("quantity") ?? 1);
 
   if (!acquiredDate) return { error: "日付は必須です。" };
   if (!projectId) return { error: "案件（商材）を選択してください。" };
   if (Number.isNaN(unitPrice) || unitPrice <= 0) {
     return { error: "単価を決定できませんでした。役職・従業員数の選択を確認してください。" };
+  }
+  if (!Number.isInteger(quantity) || quantity < 1) {
+    return { error: "件数は1以上の整数で入力してください。" };
   }
 
   const employeeCount = employeeCountRaw === "" ? null : Number(employeeCountRaw);
@@ -36,7 +40,8 @@ export async function createAcquisition(
     position: position || null,
     employee_count: employeeCount,
     unit_price: unitPrice,
-    amount: unitPrice,
+    quantity,
+    amount: unitPrice * quantity,
     created_by: profile.id,
   });
 
