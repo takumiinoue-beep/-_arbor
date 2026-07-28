@@ -77,6 +77,7 @@ export function AcquisitionButton({ projects }: { projects: ProjectWithStaff[] }
       <Modal isOpen={open} onClose={() => setOpen(false)} title="案件獲得の登録">
         <form action={formAction} className="flex flex-col gap-4">
           <input type="hidden" name="unit_price" value={unitPrice ?? ""} />
+          <input type="hidden" name="rate_id" value={matchedRate?.id ?? ""} />
 
           <div className="flex flex-col gap-1">
             <label className="text-sm font-medium text-slate-700">
@@ -184,6 +185,11 @@ export function AcquisitionButton({ projects }: { projects: ProjectWithStaff[] }
             {hasRates && unitPrice === null && projectId && (
               <p className="mt-1 text-xs text-red-600">
                 この案件の料金表に該当する役職・従業員数の設定がありません。
+              </p>
+            )}
+            {unitPrice !== null && (
+              <p className="mt-1 text-xs text-slate-400">
+                ※ 登録するとこの案件の実績件数にも{quantityValid ? quantityNum : 0}件加算されます。
               </p>
             )}
           </div>

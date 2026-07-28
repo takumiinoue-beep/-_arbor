@@ -73,6 +73,7 @@ export type Acquisition = {
   id: string;
   acquired_date: string;
   project_id: string;
+  rate_id: string | null;
   position: string | null;
   employee_count: number | null;
   unit_price: number;

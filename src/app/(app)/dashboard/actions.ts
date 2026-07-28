@@ -14,6 +14,7 @@ export async function createAcquisition(
 
   const acquiredDate = String(formData.get("acquired_date") ?? "").trim();
   const projectId = String(formData.get("project_id") ?? "").trim();
+  const rateId = String(formData.get("rate_id") ?? "").trim();
   const position = String(formData.get("position") ?? "").trim();
   const employeeCountRaw = String(formData.get("employee_count") ?? "").trim();
   const unitPrice = Number(formData.get("unit_price") ?? 0);
@@ -34,28 +35,30 @@ export async function createAcquisition(
   }
 
   const supabase = await createClient();
-  const { error } = await supabase.from("acquisitions").insert({
-    acquired_date: acquiredDate,
-    project_id: projectId,
-    position: position || null,
-    employee_count: employeeCount,
-    unit_price: unitPrice,
-    quantity,
-    amount: unitPrice * quantity,
-    created_by: profile.id,
+  const { error } = await supabase.rpc("create_acquisition", {
+    p_acquired_date: acquiredDate,
+    p_project_id: projectId,
+    p_rate_id: rateId || null,
+    p_position: position || null,
+    p_employee_count: employeeCount,
+    p_unit_price: unitPrice,
+    p_quantity: quantity,
+    p_created_by: profile.id,
   });
 
   if (error) return { error: `登録に失敗しました: ${error.message}` };
 
   revalidatePath("/dashboard");
+  revalidatePath("/projects");
   return null;
 }
 
 export async function deleteAcquisition(id: string) {
   await requireAdmin();
   const supabase = await createClient();
-  const { error } = await supabase.from("acquisitions").delete().eq("id", id);
+  const { error } = await supabase.rpc("delete_acquisition", { p_id: id });
   if (error) throw new Error(error.message);
 
   revalidatePath("/dashboard");
+  revalidatePath("/projects");
 }
