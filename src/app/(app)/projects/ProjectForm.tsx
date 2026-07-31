@@ -10,6 +10,13 @@ type Action = (
   formData: FormData
 ) => Promise<{ error: string } | null>;
 
+export type NameTemplate = {
+  unit_price: number;
+  client_position: string | null;
+  client_employee_count: number | null;
+  price_rates: PriceRate[];
+};
+
 type PriceRateRow = {
   position: string;
   employee_min: string;
@@ -46,6 +53,7 @@ export function ProjectForm({
   priceRates,
   project,
   existingNames,
+  nameTemplates,
   submitLabel,
 }: {
   action: Action;
@@ -53,6 +61,7 @@ export function ProjectForm({
   priceRates: PriceRate[];
   project?: Project;
   existingNames: string[];
+  nameTemplates: Record<string, NameTemplate>;
   submitLabel: string;
 }) {
   const [state, formAction, pending] = useActionState(action, null);
@@ -122,6 +131,27 @@ export function ProjectForm({
     if (match) setUnitPrice(match.unit_price);
   }
 
+  // 既存の案件名を選んだら、その案件の単価・料金表・取引先条件を引き継ぐ
+  // （件数系は新しい期間の分として0からにする）
+  function applyNameTemplate(name: string) {
+    const template = nameTemplates[name];
+    if (!template) return;
+    setUnitPrice(String(template.unit_price));
+    setClientPosition(template.client_position ?? "");
+    setClientEmployeeCount(template.client_employee_count != null ? String(template.client_employee_count) : "");
+    setRateRows(
+      template.price_rates.map((r) => ({
+        position: r.position,
+        employee_min: String(r.employee_min),
+        employee_max: r.employee_max === null ? "" : String(r.employee_max),
+        unit_price: String(r.unit_price),
+        quantity: "0",
+        actual_quantity: "0",
+        confirmed_quantity: "0",
+      }))
+    );
+  }
+
   function updateRateRow(idx: number, field: keyof PriceRateRow, value: string) {
     setRateRows((prev) => {
       const next = [...prev];
@@ -158,6 +188,7 @@ export function ProjectForm({
                 setSelectedName("");
               } else {
                 setSelectedName(e.target.value);
+                applyNameTemplate(e.target.value);
               }
             }}
             className="rounded-md border border-slate-300 px-3 py-2 text-sm focus:border-slate-500 focus:outline-none"
@@ -195,6 +226,11 @@ export function ProjectForm({
               </button>
             )}
           </div>
+        )}
+        {nameMode === "select" && (
+          <p className="text-xs text-slate-400">
+            既存の案件名を選ぶと、その案件の単価・料金表・取引先条件を引き継ぎます（件数は0からになります）。
+          </p>
         )}
       </div>
 
