@@ -30,7 +30,7 @@ type ProjectOption = {
   id: string;
   name: string;
   unit_price: number;
-  actual_quantity: number;
+  confirmed_quantity: number;
   start_date: string;
   price_rates?: PriceRate[];
 };
@@ -40,35 +40,35 @@ type BillableItem = {
   description: string;
   label: string;
   unit_price: number;
-  actual_quantity: number;
+  confirmed_quantity: number;
   start_date: string;
 };
 
-// 案件から請求書の明細候補を作る。料金表がある案件は行ごとの実績件数・単価が
-// 違うため、行ごとに明細候補を分ける（料金表が無い案件は案件本体の実績件数）。
+// 案件から請求書の明細候補を作る。料金表がある案件は行ごとの確定件数・単価が
+// 違うため、行ごとに明細候補を分ける（料金表が無い案件は案件本体の確定件数）。
 function toBillableItems(projects: ProjectOption[]): BillableItem[] {
   const result: BillableItem[] = [];
   for (const p of projects) {
     if (p.price_rates && p.price_rates.length > 0) {
       for (const r of p.price_rates) {
-        if (r.actual_quantity <= 0) continue;
+        if (r.confirmed_quantity <= 0) continue;
         const description = r.position ? `${p.name}（${r.position}）` : p.name;
         result.push({
           id: `${p.id}:${r.id}`,
           description,
-          label: `${description}（実績 ${r.actual_quantity}件 × ¥${r.unit_price.toLocaleString("ja-JP")}）`,
+          label: `${description}（確定 ${r.confirmed_quantity}件 × ¥${r.unit_price.toLocaleString("ja-JP")}）`,
           unit_price: r.unit_price,
-          actual_quantity: r.actual_quantity,
+          confirmed_quantity: r.confirmed_quantity,
           start_date: p.start_date,
         });
       }
-    } else if (p.actual_quantity > 0) {
+    } else if (p.confirmed_quantity > 0) {
       result.push({
         id: p.id,
         description: p.name,
-        label: `${p.name}（実績 ${p.actual_quantity}件 × ¥${p.unit_price.toLocaleString("ja-JP")}）`,
+        label: `${p.name}（確定 ${p.confirmed_quantity}件 × ¥${p.unit_price.toLocaleString("ja-JP")}）`,
         unit_price: p.unit_price,
-        actual_quantity: p.actual_quantity,
+        confirmed_quantity: p.confirmed_quantity,
         start_date: p.start_date,
       });
     }
@@ -79,10 +79,10 @@ function toBillableItems(projects: ProjectOption[]): BillableItem[] {
 function billableItemToInvoiceItem(item: BillableItem): InvoiceItemForm {
   return {
     description: item.description,
-    quantity: String(item.actual_quantity),
+    quantity: String(item.confirmed_quantity),
     unit_price: String(item.unit_price),
     tax_rate: 0.1,
-    amount: item.actual_quantity * item.unit_price,
+    amount: item.confirmed_quantity * item.unit_price,
   };
 }
 
