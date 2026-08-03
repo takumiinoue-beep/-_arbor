@@ -4,7 +4,7 @@ import { useMemo, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import Table, { type TableColumn } from "@/components/common/Table";
 import Modal from "@/components/common/Modal";
-import type { Client, CompanyBankAccount, CompanySettings, InvoiceIssued } from "@/types/database";
+import type { Client, CompanyBankAccount, CompanySettings, InvoiceIssued, PriceRate } from "@/types/database";
 import {
   saveInvoice,
   deleteInvoiceAction,
@@ -32,15 +32,57 @@ type ProjectOption = {
   unit_price: number;
   actual_quantity: number;
   start_date: string;
+  price_rates?: PriceRate[];
 };
 
-function projectToItem(project: ProjectOption): InvoiceItemForm {
+type BillableItem = {
+  id: string;
+  description: string;
+  label: string;
+  unit_price: number;
+  actual_quantity: number;
+  start_date: string;
+};
+
+// 案件から請求書の明細候補を作る。料金表がある案件は行ごとの実績件数・単価が
+// 違うため、行ごとに明細候補を分ける（料金表が無い案件は案件本体の実績件数）。
+function toBillableItems(projects: ProjectOption[]): BillableItem[] {
+  const result: BillableItem[] = [];
+  for (const p of projects) {
+    if (p.price_rates && p.price_rates.length > 0) {
+      for (const r of p.price_rates) {
+        if (r.actual_quantity <= 0) continue;
+        const description = r.position ? `${p.name}（${r.position}）` : p.name;
+        result.push({
+          id: `${p.id}:${r.id}`,
+          description,
+          label: `${description}（実績 ${r.actual_quantity}件 × ¥${r.unit_price.toLocaleString("ja-JP")}）`,
+          unit_price: r.unit_price,
+          actual_quantity: r.actual_quantity,
+          start_date: p.start_date,
+        });
+      }
+    } else if (p.actual_quantity > 0) {
+      result.push({
+        id: p.id,
+        description: p.name,
+        label: `${p.name}（実績 ${p.actual_quantity}件 × ¥${p.unit_price.toLocaleString("ja-JP")}）`,
+        unit_price: p.unit_price,
+        actual_quantity: p.actual_quantity,
+        start_date: p.start_date,
+      });
+    }
+  }
+  return result;
+}
+
+function billableItemToInvoiceItem(item: BillableItem): InvoiceItemForm {
   return {
-    description: project.name,
-    quantity: String(project.actual_quantity),
-    unit_price: String(project.unit_price),
+    description: item.description,
+    quantity: String(item.actual_quantity),
+    unit_price: String(item.unit_price),
     tax_rate: 0.1,
-    amount: project.actual_quantity * project.unit_price,
+    amount: item.actual_quantity * item.unit_price,
   };
 }
 
@@ -69,12 +111,12 @@ export function InvoiceIssueClient({
   const [selectedProjectId, setSelectedProjectId] = useState("");
   const [selectedMonth, setSelectedMonth] = useState("");
 
-  const billableProjects = useMemo(() => projects.filter((p) => p.actual_quantity > 0), [projects]);
+  const billableItems = useMemo(() => toBillableItems(projects), [projects]);
 
   const projectMonths = useMemo(() => {
-    const set = new Set(billableProjects.map((p) => p.start_date.slice(0, 7)));
+    const set = new Set(billableItems.map((p) => p.start_date.slice(0, 7)));
     return Array.from(set).sort().reverse();
-  }, [billableProjects]);
+  }, [billableItems]);
 
   function updateItem(idx: number, field: keyof InvoiceItemForm, val: string | number) {
     setItems((prev) => {
@@ -98,16 +140,16 @@ export function InvoiceIssueClient({
   }
 
   function addItemFromProject() {
-    const project = billableProjects.find((p) => p.id === selectedProjectId);
-    if (!project) return;
-    appendItems([projectToItem(project)]);
+    const item = billableItems.find((p) => p.id === selectedProjectId);
+    if (!item) return;
+    appendItems([billableItemToInvoiceItem(item)]);
     setSelectedProjectId("");
   }
 
   function addItemsFromMonth() {
     if (!selectedMonth) return;
-    const monthProjects = billableProjects.filter((p) => p.start_date.slice(0, 7) === selectedMonth);
-    appendItems(monthProjects.map(projectToItem));
+    const monthItems = billableItems.filter((p) => p.start_date.slice(0, 7) === selectedMonth);
+    appendItems(monthItems.map(billableItemToInvoiceItem));
     setSelectedMonth("");
   }
 
@@ -418,7 +460,7 @@ export function InvoiceIssueClient({
           <div>
             <label className={labelClass}>明細</label>
 
-            {billableProjects.length > 0 && (
+            {billableItems.length > 0 && (
               <div className="mb-2 flex flex-col gap-2">
                 {projectMonths.length > 0 && (
                   <div className="flex flex-wrap items-center gap-2">
@@ -429,7 +471,7 @@ export function InvoiceIssueClient({
                     >
                       <option value="">-- 月をまとめて追加 --</option>
                       {projectMonths.map((m) => {
-                        const count = billableProjects.filter((p) => p.start_date.slice(0, 7) === m).length;
+                        const count = billableItems.filter((p) => p.start_date.slice(0, 7) === m).length;
                         return (
                           <option key={m} value={m}>
                             {Number(m.slice(5, 7))}月（{count}件）
@@ -454,9 +496,9 @@ export function InvoiceIssueClient({
                     onChange={(e) => setSelectedProjectId(e.target.value)}
                   >
                     <option value="">-- 案件から明細を追加 --</option>
-                    {billableProjects.map((p) => (
+                    {billableItems.map((p) => (
                       <option key={p.id} value={p.id}>
-                        {p.name}（実績 {p.actual_quantity}件 × ¥{p.unit_price.toLocaleString("ja-JP")}）
+                        {p.label}
                       </option>
                     ))}
                   </select>
@@ -500,7 +542,7 @@ export function InvoiceIssueClient({
                           className={`${inputClass} py-1.5 text-right`}
                           type="number"
                           min={0}
-                          step={0.01}
+                          step={1}
                           value={item.quantity}
                           onChange={(e) => updateItem(idx, "quantity", e.target.value)}
                         />
