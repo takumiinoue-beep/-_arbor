@@ -8,7 +8,7 @@
 -- rate_id列を追加する。
 
 alter table public.acquisitions
-  add column rate_id uuid references public.price_rates (id) on delete set null;
+  add column if not exists rate_id uuid references public.price_rates (id) on delete set null;
 
 create or replace function public.create_acquisition(
   p_acquired_date date,
