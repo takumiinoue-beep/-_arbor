@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import Modal from "@/components/common/Modal";
 import type { ProjectWithStaff } from "@/types/database";
 import { formatCurrency } from "@/lib/format";
+import { formatYearMonth } from "@/lib/period";
 import { createAcquisition } from "./actions";
 
 function toToday(): string {
@@ -46,8 +47,12 @@ export function AcquisitionButton({ projects }: { projects: ProjectWithStaff[] }
     wasPending.current = pending;
   }, [pending, state, router]);
 
+  // 同じ案件名が期間ごとに複数存在するため、名前が同じ場合は開始日が新しい順に並べる
   const sortedProjects = useMemo(
-    () => [...projects].sort((a, b) => a.name.localeCompare(b.name, "ja")),
+    () =>
+      [...projects].sort(
+        (a, b) => a.name.localeCompare(b.name, "ja") || b.start_date.localeCompare(a.start_date)
+      ),
     [projects]
   );
   const selectedProject = projects.find((p) => p.id === projectId);
@@ -113,7 +118,7 @@ export function AcquisitionButton({ projects }: { projects: ProjectWithStaff[] }
               </option>
               {sortedProjects.map((p) => (
                 <option key={p.id} value={p.id}>
-                  {p.name}
+                  {p.name}（{formatYearMonth(p.start_date.slice(0, 7))}）
                 </option>
               ))}
             </select>
