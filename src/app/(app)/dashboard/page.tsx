@@ -18,6 +18,8 @@ export default async function DashboardPage() {
       .order("acquired_date", { ascending: false }),
   ]);
 
+  const todayISO = new Date().toISOString().slice(0, 10);
+
   return (
     <div className="flex flex-col gap-6">
       <h1 className="text-lg font-bold text-slate-900">ダッシュボード</h1>
@@ -26,6 +28,7 @@ export default async function DashboardPage() {
         staffList={(staffList as Profile[]) ?? []}
         acquisitions={(acquisitions as AcquisitionRow[]) ?? []}
         currentUserId={profile.id}
+        todayISO={todayISO}
       />
     </div>
   );

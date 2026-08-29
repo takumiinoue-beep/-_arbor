@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo } from "react";
+import { Fragment, useMemo, useState } from "react";
 import type { Acquisition, Profile, ProjectWithStaff } from "@/types/database";
 import { formatCurrency } from "@/lib/format";
 import { AcquisitionButton } from "./AcquisitionButton";
@@ -18,6 +18,13 @@ type SalesRow = {
   unitPrice: number;
   acquiredQty: number;
   effectiveQty: number;
+  billedAmount: number;
+};
+
+type OpGroup = {
+  opName: string;
+  rows: SalesRow[];
+  acquiredQty: number;
   billedAmount: number;
 };
 
@@ -57,18 +64,56 @@ function buildSalesRows(acquisitions: AcquisitionRow[]): SalesRow[] {
   );
 }
 
+function groupByOp(rows: SalesRow[]): OpGroup[] {
+  const groups: OpGroup[] = [];
+  for (const row of rows) {
+    const last = groups[groups.length - 1];
+    const group = last && last.opName === row.opName ? last : undefined;
+    if (group) {
+      group.rows.push(row);
+      group.acquiredQty += row.acquiredQty;
+      group.billedAmount += row.billedAmount;
+    } else {
+      groups.push({ opName: row.opName, rows: [row], acquiredQty: row.acquiredQty, billedAmount: row.billedAmount });
+    }
+  }
+  return groups;
+}
+
 export function DashboardClient({
   projects,
   staffList,
   acquisitions,
   currentUserId,
+  todayISO,
 }: {
   projects: ProjectWithStaff[];
   staffList: Profile[];
   acquisitions: AcquisitionRow[];
   currentUserId: string;
+  todayISO: string;
 }) {
-  const salesRows = useMemo(() => buildSalesRows(acquisitions), [acquisitions]);
+  const currentMonthKey = todayISO.slice(0, 7);
+  const [monthTab, setMonthTab] = useState(currentMonthKey);
+
+  const monthTabs = useMemo(() => {
+    const set = new Set(acquisitions.map((a) => a.acquired_date.slice(0, 7)));
+    set.add(currentMonthKey);
+    return Array.from(set).sort();
+  }, [acquisitions, currentMonthKey]);
+
+  const spansMultipleYears = useMemo(
+    () => new Set(monthTabs.map((m) => m.slice(0, 4))).size > 1,
+    [monthTabs]
+  );
+
+  const filteredAcquisitions = useMemo(() => {
+    if (monthTab === "all") return acquisitions;
+    return acquisitions.filter((a) => a.acquired_date.slice(0, 7) === monthTab);
+  }, [acquisitions, monthTab]);
+
+  const salesRows = useMemo(() => buildSalesRows(filteredAcquisitions), [filteredAcquisitions]);
+  const opGroups = useMemo(() => groupByOp(salesRows), [salesRows]);
 
   const totals = useMemo(
     () =>
@@ -85,6 +130,34 @@ export function DashboardClient({
 
   return (
     <div className="flex flex-col gap-6">
+      <div className="flex flex-wrap gap-1 border-b border-slate-200">
+        <button
+          type="button"
+          onClick={() => setMonthTab("all")}
+          className={`-mb-px border-b-2 px-4 py-2 text-sm font-medium ${
+            monthTab === "all"
+              ? "border-slate-900 text-slate-900"
+              : "border-transparent text-slate-500 hover:text-slate-700"
+          }`}
+        >
+          全て
+        </button>
+        {monthTabs.map((m) => (
+          <button
+            key={m}
+            type="button"
+            onClick={() => setMonthTab(m)}
+            className={`-mb-px border-b-2 px-4 py-2 text-sm font-medium whitespace-nowrap ${
+              monthTab === m
+                ? "border-slate-900 text-slate-900"
+                : "border-transparent text-slate-500 hover:text-slate-700"
+            }`}
+          >
+            {spansMultipleYears ? `${m.slice(0, 4)}年${Number(m.slice(5, 7))}月` : `${Number(m.slice(5, 7))}月`}
+          </button>
+        ))}
+      </div>
+
       <div className="flex justify-end">
         <AcquisitionButton projects={projects} staffList={staffList} currentUserId={currentUserId} />
       </div>
@@ -102,22 +175,39 @@ export function DashboardClient({
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-100">
-            {salesRows.map((r) => (
-              <tr key={r.key} className="hover:bg-slate-50">
-                <td className="px-3 py-2 font-medium text-slate-800">{r.opName}</td>
-                <td className="px-3 py-2 text-slate-600">{r.projectName}</td>
-                <td className="px-3 py-2 text-right text-slate-700">{formatCurrency(r.unitPrice)}</td>
-                <td className="px-3 py-2 text-right text-slate-700">{r.acquiredQty}件</td>
-                <td className="px-3 py-2 text-right text-slate-700">{r.effectiveQty}件</td>
-                <td className="px-3 py-2 text-right font-medium text-slate-900">
-                  {formatCurrency(r.billedAmount)}
-                </td>
-              </tr>
+            {opGroups.map((group) => (
+              <Fragment key={group.opName}>
+                <tr className="bg-slate-100">
+                  <td colSpan={6} className="px-3 py-2 font-semibold text-slate-800">
+                    {group.opName}
+                  </td>
+                </tr>
+                {group.rows.map((r) => (
+                  <tr key={r.key} className="hover:bg-slate-50">
+                    <td className="px-3 py-2" />
+                    <td className="px-3 py-2 text-slate-600">{r.projectName}</td>
+                    <td className="px-3 py-2 text-right text-slate-700">{formatCurrency(r.unitPrice)}</td>
+                    <td className="px-3 py-2 text-right text-slate-700">{r.acquiredQty}件</td>
+                    <td className="px-3 py-2 text-right text-slate-700">{r.effectiveQty}件</td>
+                    <td className="px-3 py-2 text-right font-medium text-slate-900">
+                      {formatCurrency(r.billedAmount)}
+                    </td>
+                  </tr>
+                ))}
+                <tr className="bg-slate-50 text-xs font-medium text-slate-600">
+                  <td className="px-3 py-1.5" colSpan={3}>
+                    {group.opName}　小計
+                  </td>
+                  <td className="px-3 py-1.5 text-right">{group.acquiredQty}件</td>
+                  <td className="px-3 py-1.5" />
+                  <td className="px-3 py-1.5 text-right">{formatCurrency(group.billedAmount)}</td>
+                </tr>
+              </Fragment>
             ))}
             {salesRows.length === 0 && (
               <tr>
                 <td colSpan={6} className="px-3 py-6 text-center text-slate-400">
-                  獲得データがありません
+                  この期間の獲得データがありません
                 </td>
               </tr>
             )}
