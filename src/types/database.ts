@@ -79,6 +79,7 @@ export type Acquisition = {
   unit_price: number;
   quantity: number;
   amount: number;
+  staff_id: string;
   created_by: string | null;
   created_at: string;
 };
