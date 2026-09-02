@@ -17,6 +17,7 @@ type SalesRow = {
   projectName: string;
   unitPrice: number;
   acquiredQty: number;
+  acquiredAmount: number;
   effectiveQty: number;
   billedAmount: number;
 };
@@ -25,6 +26,7 @@ type OpGroup = {
   opName: string;
   rows: SalesRow[];
   acquiredQty: number;
+  acquiredAmount: number;
   billedAmount: number;
 };
 
@@ -47,6 +49,7 @@ function buildSalesRows(acquisitions: AcquisitionRow[]): SalesRow[] {
       projectName,
       unitPrice: a.unit_price,
       acquiredQty: 0,
+      acquiredAmount: 0,
       effectiveQty,
       billedAmount: 0,
     };
@@ -56,6 +59,7 @@ function buildSalesRows(acquisitions: AcquisitionRow[]): SalesRow[] {
 
   const rows = Array.from(map.values());
   for (const row of rows) {
+    row.acquiredAmount = row.unitPrice * row.acquiredQty;
     row.billedAmount = row.unitPrice * row.effectiveQty;
   }
 
@@ -72,9 +76,16 @@ function groupByOp(rows: SalesRow[]): OpGroup[] {
     if (group) {
       group.rows.push(row);
       group.acquiredQty += row.acquiredQty;
+      group.acquiredAmount += row.acquiredAmount;
       group.billedAmount += row.billedAmount;
     } else {
-      groups.push({ opName: row.opName, rows: [row], acquiredQty: row.acquiredQty, billedAmount: row.billedAmount });
+      groups.push({
+        opName: row.opName,
+        rows: [row],
+        acquiredQty: row.acquiredQty,
+        acquiredAmount: row.acquiredAmount,
+        billedAmount: row.billedAmount,
+      });
     }
   }
   return groups;
@@ -120,10 +131,11 @@ export function DashboardClient({
       salesRows.reduce(
         (acc, r) => {
           acc.acquiredQty += r.acquiredQty;
+          acc.acquiredAmount += r.acquiredAmount;
           acc.billedAmount += r.billedAmount;
           return acc;
         },
-        { acquiredQty: 0, billedAmount: 0 }
+        { acquiredQty: 0, acquiredAmount: 0, billedAmount: 0 }
       ),
     [salesRows]
   );
@@ -170,6 +182,7 @@ export function DashboardClient({
               <th className="px-3 py-2 text-left font-medium text-slate-500">案件名</th>
               <th className="px-3 py-2 text-right font-medium text-slate-500">単価</th>
               <th className="px-3 py-2 text-right font-medium text-slate-500">獲得件数</th>
+              <th className="px-3 py-2 text-right font-medium text-slate-500">獲得金額</th>
               <th className="px-3 py-2 text-right font-medium text-slate-500">有効件数</th>
               <th className="px-3 py-2 text-right font-medium text-slate-500">請求金額</th>
             </tr>
@@ -178,7 +191,7 @@ export function DashboardClient({
             {opGroups.map((group) => (
               <Fragment key={group.opName}>
                 <tr className="bg-slate-100">
-                  <td colSpan={6} className="px-3 py-2 font-semibold text-slate-800">
+                  <td colSpan={7} className="px-3 py-2 font-semibold text-slate-800">
                     {group.opName}
                   </td>
                 </tr>
@@ -188,6 +201,7 @@ export function DashboardClient({
                     <td className="px-3 py-2 text-slate-600">{r.projectName}</td>
                     <td className="px-3 py-2 text-right text-slate-700">{formatCurrency(r.unitPrice)}</td>
                     <td className="px-3 py-2 text-right text-slate-700">{r.acquiredQty}件</td>
+                    <td className="px-3 py-2 text-right text-slate-700">{formatCurrency(r.acquiredAmount)}</td>
                     <td className="px-3 py-2 text-right text-slate-700">{r.effectiveQty}件</td>
                     <td className="px-3 py-2 text-right font-medium text-slate-900">
                       {formatCurrency(r.billedAmount)}
@@ -199,6 +213,7 @@ export function DashboardClient({
                     {group.opName}　小計
                   </td>
                   <td className="px-3 py-1.5 text-right">{group.acquiredQty}件</td>
+                  <td className="px-3 py-1.5 text-right">{formatCurrency(group.acquiredAmount)}</td>
                   <td className="px-3 py-1.5" />
                   <td className="px-3 py-1.5 text-right">{formatCurrency(group.billedAmount)}</td>
                 </tr>
@@ -206,7 +221,7 @@ export function DashboardClient({
             ))}
             {salesRows.length === 0 && (
               <tr>
-                <td colSpan={6} className="px-3 py-6 text-center text-slate-400">
+                <td colSpan={7} className="px-3 py-6 text-center text-slate-400">
                   この期間の獲得データがありません
                 </td>
               </tr>
@@ -219,6 +234,7 @@ export function DashboardClient({
                   合計
                 </td>
                 <td className="px-3 py-2 text-right">{totals.acquiredQty}件</td>
+                <td className="px-3 py-2 text-right">{formatCurrency(totals.acquiredAmount)}</td>
                 <td className="px-3 py-2 text-right" />
                 <td className="px-3 py-2 text-right">{formatCurrency(totals.billedAmount)}</td>
               </tr>
