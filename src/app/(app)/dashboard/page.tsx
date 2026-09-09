@@ -28,6 +28,7 @@ export default async function DashboardPage() {
         staffList={(staffList as Profile[]) ?? []}
         acquisitions={(acquisitions as AcquisitionRow[]) ?? []}
         currentUserId={profile.id}
+        isAdmin={profile.role === "admin"}
         todayISO={todayISO}
       />
     </div>

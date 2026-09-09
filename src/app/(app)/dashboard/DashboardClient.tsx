@@ -4,6 +4,9 @@ import { Fragment, useMemo, useState } from "react";
 import type { Acquisition, Profile, ProjectWithStaff } from "@/types/database";
 import { formatCurrency } from "@/lib/format";
 import { AcquisitionButton } from "./AcquisitionButton";
+import { DeleteAcquisitionButton } from "./DeleteAcquisitionButton";
+import { ConfirmedQuantityEditor } from "../projects/ConfirmedQuantityEditor";
+import { RateConfirmedQuantityEditor } from "../projects/RateConfirmedQuantityEditor";
 
 export type AcquisitionRow = Acquisition & {
   project: { id: string; name: string; confirmed_quantity: number } | null;
@@ -11,15 +14,20 @@ export type AcquisitionRow = Acquisition & {
   rate: { id: string; confirmed_quantity: number } | null;
 };
 
+type SalesEntry = { id: string; acquiredDate: string; quantity: number };
+
 type SalesRow = {
   key: string;
   opName: string;
+  projectId: string;
   projectName: string;
+  rateId: string | null;
   unitPrice: number;
   acquiredQty: number;
   acquiredAmount: number;
   effectiveQty: number;
   billedAmount: number;
+  entries: SalesEntry[];
 };
 
 type OpGroup = {
@@ -46,14 +54,18 @@ function buildSalesRows(acquisitions: AcquisitionRow[]): SalesRow[] {
     const entry = map.get(key) ?? {
       key,
       opName,
+      projectId: a.project_id,
       projectName,
+      rateId: a.rate_id,
       unitPrice: a.unit_price,
       acquiredQty: 0,
       acquiredAmount: 0,
       effectiveQty,
       billedAmount: 0,
+      entries: [],
     };
     entry.acquiredQty += a.quantity;
+    entry.entries.push({ id: a.id, acquiredDate: a.acquired_date, quantity: a.quantity });
     map.set(key, entry);
   }
 
@@ -61,6 +73,7 @@ function buildSalesRows(acquisitions: AcquisitionRow[]): SalesRow[] {
   for (const row of rows) {
     row.acquiredAmount = row.unitPrice * row.acquiredQty;
     row.billedAmount = row.unitPrice * row.effectiveQty;
+    row.entries.sort((a, b) => b.acquiredDate.localeCompare(a.acquiredDate));
   }
 
   return rows.sort(
@@ -96,16 +109,28 @@ export function DashboardClient({
   staffList,
   acquisitions,
   currentUserId,
+  isAdmin,
   todayISO,
 }: {
   projects: ProjectWithStaff[];
   staffList: Profile[];
   acquisitions: AcquisitionRow[];
   currentUserId: string;
+  isAdmin: boolean;
   todayISO: string;
 }) {
   const currentMonthKey = todayISO.slice(0, 7);
   const [monthTab, setMonthTab] = useState(currentMonthKey);
+  const [expanded, setExpanded] = useState<Set<string>>(new Set());
+
+  function toggleExpanded(key: string) {
+    setExpanded((prev) => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      return next;
+    });
+  }
 
   const monthTabs = useMemo(() => {
     const set = new Set(acquisitions.map((a) => a.acquired_date.slice(0, 7)));
@@ -196,17 +221,66 @@ export function DashboardClient({
                   </td>
                 </tr>
                 {group.rows.map((r) => (
-                  <tr key={r.key} className="hover:bg-slate-50">
-                    <td className="px-3 py-2" />
-                    <td className="px-3 py-2 text-slate-600">{r.projectName}</td>
-                    <td className="px-3 py-2 text-right text-slate-700">{formatCurrency(r.unitPrice)}</td>
-                    <td className="px-3 py-2 text-right text-slate-700">{r.acquiredQty}件</td>
-                    <td className="px-3 py-2 text-right text-slate-700">{formatCurrency(r.acquiredAmount)}</td>
-                    <td className="px-3 py-2 text-right text-slate-700">{r.effectiveQty}件</td>
-                    <td className="px-3 py-2 text-right font-medium text-slate-900">
-                      {formatCurrency(r.billedAmount)}
-                    </td>
-                  </tr>
+                  <Fragment key={r.key}>
+                    <tr className="hover:bg-slate-50">
+                      <td className="px-3 py-2" />
+                      <td className="px-3 py-2 text-slate-600">
+                        <button
+                          type="button"
+                          onClick={() => toggleExpanded(r.key)}
+                          className="mr-1.5 inline-block w-3 text-xs text-slate-400 hover:text-slate-700"
+                          aria-label={expanded.has(r.key) ? "内訳を閉じる" : "内訳を開く"}
+                        >
+                          {expanded.has(r.key) ? "▼" : "▶"}
+                        </button>
+                        {r.projectName}
+                      </td>
+                      <td className="px-3 py-2 text-right text-slate-700">{formatCurrency(r.unitPrice)}</td>
+                      <td className="px-3 py-2 text-right text-slate-700">{r.acquiredQty}件</td>
+                      <td className="px-3 py-2 text-right text-slate-700">{formatCurrency(r.acquiredAmount)}</td>
+                      <td className="px-3 py-2 text-right">
+                        {isAdmin ? (
+                          r.rateId ? (
+                            <RateConfirmedQuantityEditor
+                              rateId={r.rateId}
+                              confirmedQuantity={r.effectiveQty}
+                              unitPrice={r.unitPrice}
+                            />
+                          ) : (
+                            <ConfirmedQuantityEditor
+                              projectId={r.projectId}
+                              confirmedQuantity={r.effectiveQty}
+                              unitPrice={r.unitPrice}
+                            />
+                          )
+                        ) : (
+                          <span className="text-slate-700">{r.effectiveQty}件</span>
+                        )}
+                      </td>
+                      <td className="px-3 py-2 text-right font-medium text-slate-900">
+                        {formatCurrency(r.billedAmount)}
+                      </td>
+                    </tr>
+                    {expanded.has(r.key) &&
+                      r.entries.map((e) => (
+                        <tr key={e.id} className="bg-slate-50/60 text-xs">
+                          <td className="px-3 py-1.5" />
+                          <td className="px-3 py-1.5 pl-8 text-slate-500">└ {e.acquiredDate}</td>
+                          <td className="px-3 py-1.5" />
+                          <td className="px-3 py-1.5 text-right text-slate-500">{e.quantity}件</td>
+                          <td className="px-3 py-1.5 text-right text-slate-500">
+                            {formatCurrency(e.quantity * r.unitPrice)}
+                          </td>
+                          <td className="px-3 py-1.5" colSpan={2}>
+                            {isAdmin && (
+                              <div className="flex justify-end">
+                                <DeleteAcquisitionButton id={e.id} />
+                              </div>
+                            )}
+                          </td>
+                        </tr>
+                      ))}
+                  </Fragment>
                 ))}
                 <tr className="bg-slate-50 text-xs font-medium text-slate-600">
                   <td className="px-3 py-1.5" colSpan={3}>
