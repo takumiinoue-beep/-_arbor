@@ -81,6 +81,52 @@ function buildSalesRows(acquisitions: AcquisitionRow[]): SalesRow[] {
   );
 }
 
+type DailyByOp = {
+  opName: string;
+  days: { day: number; date: string; count: number; amount: number }[];
+  totalCount: number;
+  totalAmount: number;
+};
+
+// 指定した月の1日〜末日について、OPごとに獲得件数・獲得金額を積み上げる
+// （データが無い日も0件として含め、月全体が見えるようにする）
+function buildDailyByOp(acquisitions: AcquisitionRow[], monthKey: string): DailyByOp[] {
+  const year = Number(monthKey.slice(0, 4));
+  const month = Number(monthKey.slice(5, 7));
+  const daysInMonth = new Date(Date.UTC(year, month, 0)).getUTCDate();
+
+  const byOp = new Map<string, Map<number, { count: number; amount: number }>>();
+  for (const a of acquisitions) {
+    if (a.acquired_date.slice(0, 7) !== monthKey) continue;
+    const opName = a.staff?.name ?? "不明";
+    const day = Number(a.acquired_date.slice(8, 10));
+    const opDays = byOp.get(opName) ?? new Map<number, { count: number; amount: number }>();
+    const entry = opDays.get(day) ?? { count: 0, amount: 0 };
+    entry.count += a.quantity;
+    entry.amount += a.amount;
+    opDays.set(day, entry);
+    byOp.set(opName, opDays);
+  }
+
+  const result: DailyByOp[] = [];
+  for (const [opName, opDays] of byOp) {
+    const days = Array.from({ length: daysInMonth }, (_, i) => {
+      const day = i + 1;
+      const date = `${monthKey}-${String(day).padStart(2, "0")}`;
+      const entry = opDays.get(day) ?? { count: 0, amount: 0 };
+      return { day, date, count: entry.count, amount: entry.amount };
+    });
+    result.push({
+      opName,
+      days,
+      totalCount: days.reduce((sum, d) => sum + d.count, 0),
+      totalAmount: days.reduce((sum, d) => sum + d.amount, 0),
+    });
+  }
+
+  return result.sort((a, b) => a.opName.localeCompare(b.opName, "ja"));
+}
+
 function groupByOp(rows: SalesRow[]): OpGroup[] {
   const groups: OpGroup[] = [];
   for (const row of rows) {
@@ -122,12 +168,22 @@ export function DashboardClient({
   const currentMonthKey = todayISO.slice(0, 7);
   const [monthTab, setMonthTab] = useState(currentMonthKey);
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
+  const [dailyExpanded, setDailyExpanded] = useState<Set<string>>(new Set());
 
   function toggleExpanded(key: string) {
     setExpanded((prev) => {
       const next = new Set(prev);
       if (next.has(key)) next.delete(key);
       else next.add(key);
+      return next;
+    });
+  }
+
+  function toggleDailyExpanded(opName: string) {
+    setDailyExpanded((prev) => {
+      const next = new Set(prev);
+      if (next.has(opName)) next.delete(opName);
+      else next.add(opName);
       return next;
     });
   }
@@ -150,6 +206,13 @@ export function DashboardClient({
 
   const salesRows = useMemo(() => buildSalesRows(filteredAcquisitions), [filteredAcquisitions]);
   const opGroups = useMemo(() => groupByOp(salesRows), [salesRows]);
+
+  // タブが「全て」のときはデイリー表は当月を対象にする
+  const dailyTargetMonth = monthTab === "all" ? currentMonthKey : monthTab;
+  const dailyByOp = useMemo(
+    () => buildDailyByOp(acquisitions, dailyTargetMonth),
+    [acquisitions, dailyTargetMonth]
+  );
 
   const totals = useMemo(
     () =>
@@ -315,6 +378,62 @@ export function DashboardClient({
             </tfoot>
           )}
         </table>
+      </div>
+
+      <div className="rounded-lg border border-slate-200 bg-white p-4">
+        <h2 className="mb-3 text-sm font-semibold text-slate-700">
+          デイリー実績（
+          {spansMultipleYears
+            ? `${dailyTargetMonth.slice(0, 4)}年${Number(dailyTargetMonth.slice(5, 7))}月`
+            : `${Number(dailyTargetMonth.slice(5, 7))}月`}
+          ）
+        </h2>
+        <div className="flex flex-col gap-2">
+          {dailyByOp.map((op) => (
+            <div key={op.opName} className="overflow-hidden rounded-md border border-slate-200">
+              <button
+                type="button"
+                onClick={() => toggleDailyExpanded(op.opName)}
+                className="flex w-full items-center justify-between bg-slate-100 px-3 py-2 text-left"
+              >
+                <span className="font-semibold text-slate-800">
+                  <span className="mr-1.5 inline-block w-3 text-xs text-slate-400">
+                    {dailyExpanded.has(op.opName) ? "▼" : "▶"}
+                  </span>
+                  {op.opName}
+                </span>
+                <span className="text-xs text-slate-500">
+                  月合計 {op.totalCount}件 / {formatCurrency(op.totalAmount)}
+                </span>
+              </button>
+              {dailyExpanded.has(op.opName) && (
+                <div className="overflow-x-auto">
+                  <table className="min-w-full divide-y divide-slate-200 text-xs">
+                    <thead className="bg-slate-50">
+                      <tr>
+                        <th className="px-2 py-1 text-left font-medium text-slate-500">日付</th>
+                        <th className="px-2 py-1 text-right font-medium text-slate-500">獲得件数</th>
+                        <th className="px-2 py-1 text-right font-medium text-slate-500">獲得金額</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100">
+                      {op.days.map((d) => (
+                        <tr key={d.date} className={d.count === 0 ? "text-slate-300" : undefined}>
+                          <td className="px-2 py-1">{d.day}日</td>
+                          <td className="px-2 py-1 text-right">{d.count}件</td>
+                          <td className="px-2 py-1 text-right">{formatCurrency(d.amount)}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
+          ))}
+          {dailyByOp.length === 0 && (
+            <p className="px-1 py-4 text-center text-sm text-slate-400">この月の獲得データがありません</p>
+          )}
+        </div>
       </div>
     </div>
   );
