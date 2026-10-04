@@ -84,6 +84,15 @@ export type Acquisition = {
   created_at: string;
 };
 
+export type OpConfirmedQuantity = {
+  id: string;
+  project_id: string;
+  rate_id: string | null;
+  staff_id: string;
+  confirmed_quantity: number;
+  updated_at: string;
+};
+
 export type ClientType = "customer" | "supplier" | "other";
 export type InvoiceStatus = "unpaid" | "paid";
 

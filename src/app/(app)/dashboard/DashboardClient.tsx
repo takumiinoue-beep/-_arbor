@@ -1,12 +1,11 @@
 "use client";
 
 import { Fragment, useMemo, useState } from "react";
-import type { Acquisition, Profile, ProjectWithStaff } from "@/types/database";
+import type { Acquisition, OpConfirmedQuantity, Profile, ProjectWithStaff } from "@/types/database";
 import { formatCurrency } from "@/lib/format";
 import { AcquisitionButton } from "./AcquisitionButton";
 import { DeleteAcquisitionButton } from "./DeleteAcquisitionButton";
-import { ConfirmedQuantityEditor } from "../projects/ConfirmedQuantityEditor";
-import { RateConfirmedQuantityEditor } from "../projects/RateConfirmedQuantityEditor";
+import { OpConfirmedQuantityEditor } from "./OpConfirmedQuantityEditor";
 
 export type AcquisitionRow = Acquisition & {
   project: { id: string; name: string; confirmed_quantity: number } | null;
@@ -19,6 +18,7 @@ type SalesEntry = { id: string; acquiredDate: string; quantity: number };
 type SalesRow = {
   key: string;
   opName: string;
+  staffId: string;
   projectId: string;
   projectName: string;
   rateId: string | null;
@@ -39,21 +39,44 @@ type OpGroup = {
 };
 
 // OP（担当者）×案件×単価の組み合わせごとに獲得件数を積み上げる。
-// 有効件数（確定件数）は案件・料金表の行そのものが持つ値のため、
-// 同じ案件を複数のOPが獲得している場合は各行に同じ値が表示される
-// （OPごとに確定件数を按分する仕組みは無い）。
-function buildSalesRows(acquisitions: AcquisitionRow[]): SalesRow[] {
+// 有効件数はOPごとに持つ（op_confirmed_quantities）。まだOPごとの値が無い場合は、
+// その案件（料金表の行）を獲得しているOPが1人だけなら案件側の確定件数を使い、
+// 複数OPいる場合は0とする（共有値を全OPに出すと同数になってしまうため）。
+function buildSalesRows(
+  acquisitions: AcquisitionRow[],
+  allAcquisitions: AcquisitionRow[],
+  opConfirmed: OpConfirmedQuantity[]
+): SalesRow[] {
+  const targetKey = (projectId: string, rateId: string | null) => `${projectId}:${rateId ?? ""}`;
+
+  const opsByTarget = new Map<string, Set<string>>();
+  for (const a of allAcquisitions) {
+    const k = targetKey(a.project_id, a.rate_id);
+    const set = opsByTarget.get(k) ?? new Set<string>();
+    set.add(a.staff_id);
+    opsByTarget.set(k, set);
+  }
+
+  const recordMap = new Map<string, number>();
+  for (const r of opConfirmed) {
+    recordMap.set(`${targetKey(r.project_id, r.rate_id)}:${r.staff_id}`, r.confirmed_quantity);
+  }
+
   const map = new Map<string, SalesRow>();
 
   for (const a of acquisitions) {
     const opName = a.staff?.name ?? "不明";
     const projectName = a.project?.name ?? "(削除済み案件)";
-    const effectiveQty = a.rate ? a.rate.confirmed_quantity : (a.project?.confirmed_quantity ?? 0);
+    const tk = targetKey(a.project_id, a.rate_id);
+    const sharedQty = a.rate ? a.rate.confirmed_quantity : (a.project?.confirmed_quantity ?? 0);
+    const effectiveQty =
+      recordMap.get(`${tk}:${a.staff_id}`) ?? (opsByTarget.get(tk)?.size === 1 ? sharedQty : 0);
     const key = `${a.staff_id}:${a.rate_id ?? a.project_id}:${a.unit_price}`;
 
     const entry = map.get(key) ?? {
       key,
       opName,
+      staffId: a.staff_id,
       projectId: a.project_id,
       projectName,
       rateId: a.rate_id,
@@ -154,6 +177,7 @@ export function DashboardClient({
   projects,
   staffList,
   acquisitions,
+  opConfirmed,
   currentUserId,
   isAdmin,
   todayISO,
@@ -161,6 +185,7 @@ export function DashboardClient({
   projects: ProjectWithStaff[];
   staffList: Profile[];
   acquisitions: AcquisitionRow[];
+  opConfirmed: OpConfirmedQuantity[];
   currentUserId: string;
   isAdmin: boolean;
   todayISO: string;
@@ -204,7 +229,10 @@ export function DashboardClient({
     return acquisitions.filter((a) => a.acquired_date.slice(0, 7) === monthTab);
   }, [acquisitions, monthTab]);
 
-  const salesRows = useMemo(() => buildSalesRows(filteredAcquisitions), [filteredAcquisitions]);
+  const salesRows = useMemo(
+    () => buildSalesRows(filteredAcquisitions, acquisitions, opConfirmed),
+    [filteredAcquisitions, acquisitions, opConfirmed]
+  );
   const opGroups = useMemo(() => groupByOp(salesRows), [salesRows]);
 
   // タブが「全て」のときはデイリー表は当月を対象にする
@@ -303,19 +331,13 @@ export function DashboardClient({
                       <td className="px-3 py-2 text-right text-slate-700">{formatCurrency(r.acquiredAmount)}</td>
                       <td className="px-3 py-2 text-right">
                         {isAdmin ? (
-                          r.rateId ? (
-                            <RateConfirmedQuantityEditor
-                              rateId={r.rateId}
-                              confirmedQuantity={r.effectiveQty}
-                              unitPrice={r.unitPrice}
-                            />
-                          ) : (
-                            <ConfirmedQuantityEditor
-                              projectId={r.projectId}
-                              confirmedQuantity={r.effectiveQty}
-                              unitPrice={r.unitPrice}
-                            />
-                          )
+                          <OpConfirmedQuantityEditor
+                            projectId={r.projectId}
+                            rateId={r.rateId}
+                            staffId={r.staffId}
+                            confirmedQuantity={r.effectiveQty}
+                            unitPrice={r.unitPrice}
+                          />
                         ) : (
                           <span className="text-slate-700">{r.effectiveQty}件</span>
                         )}

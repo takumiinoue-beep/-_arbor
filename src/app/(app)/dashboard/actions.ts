@@ -99,6 +99,31 @@ export async function createAcquisition(
   return null;
 }
 
+export async function updateOpConfirmedQuantity(
+  projectId: string,
+  rateId: string | null,
+  staffId: string,
+  newQuantity: number
+) {
+  await requireAdmin();
+
+  if (!Number.isInteger(newQuantity) || newQuantity < 0) {
+    throw new Error("件数は0以上の整数で入力してください。");
+  }
+
+  const supabase = await createClient();
+  const { error } = await supabase.rpc("set_op_confirmed_quantity", {
+    p_project_id: projectId,
+    p_rate_id: rateId,
+    p_staff_id: staffId,
+    p_quantity: newQuantity,
+  });
+  if (error) throw new Error(error.message);
+
+  revalidatePath("/dashboard");
+  revalidatePath("/projects");
+}
+
 export async function deleteAcquisition(id: string) {
   await requireAdmin();
   const supabase = await createClient();
