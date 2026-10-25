@@ -56,6 +56,7 @@ Supabaseダッシュボードの「SQL Editor」で、`supabase/migrations/` 配
 | [`0016_accounting.sql`](supabase/migrations/0016_accounting.sql) | 会計機能：`members`（人件費・インセンティブ設定）／`expenses`（経費）／`vendor_invoices`（取引先請求）／`pl_plan_entries`（PL計画）とRLS（管理者のみ）、RPC `save_pl_plan` |
 | [`0017_member_incentive_tiers.sql`](supabase/migrations/0017_member_incentive_tiers.sql) | メンバーのインセンティブを売上の段階ごとの金額表（`incentive_tiers`）に変更。既存の「◯円ごとに◯円」設定は20段階に展開して引き継ぐ |
 | [`0018_expense_period.sql`](supabase/migrations/0018_expense_period.sql) | 経費に期間（単月／開始月〜終了月／継続）を設定できるように（`end_month`・`ongoing`）。既存の経費は単月のまま |
+| [`0019_pl_actual_entries.sql`](supabase/migrations/0019_pl_actual_entries.sql) | PLの結果を手入力できるように（`pl_actual_entries`、RPC `save_pl_actual`）。手入力した月は自動計算より優先 |
 
 ### 3. 環境変数を設定
 

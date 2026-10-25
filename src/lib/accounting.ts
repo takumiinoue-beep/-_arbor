@@ -159,7 +159,8 @@ export function buildAutoPlan(args: Parameters<typeof buildActualInput>[0]): PlI
 export function resolvePlan(
   entries: PlPlanEntry[],
   months: string[],
-  auto: PlInput
+  auto: PlInput,
+  manualText = "計画入力で手入力した金額"
 ): { input: PlInput; autoMap: Map<string, number[]> } {
   type Override = { section: PlSection; label: string; values: (number | null)[]; order: number };
   const overrides = new Map<string, Override>();
@@ -200,7 +201,7 @@ export function resolvePlan(
         values: Array.from({ length: 12 }, (_, i) => o?.values[i] ?? a?.[i] ?? 0),
         details: Array.from({ length: 12 }, (_, i) => {
           const manual = o?.values[i];
-          if (manual != null) return [{ text: "計画入力で手入力した金額", amount: manual }];
+          if (manual != null) return [{ text: manualText, amount: manual }];
           return autoDetails?.[i] ?? [];
         }),
       });

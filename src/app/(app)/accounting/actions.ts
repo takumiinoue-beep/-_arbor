@@ -14,6 +14,7 @@ const SECTION_VALUES: PlSection[] = ["sales", "labor", "outsource", "sga"];
 function revalidateAccounting() {
   revalidatePath("/accounting/pl");
   revalidatePath("/accounting/plan");
+  revalidatePath("/accounting/actual");
   revalidatePath("/accounting/members");
   revalidatePath("/accounting/expenses");
   revalidatePath("/accounting/vendor-invoices");
@@ -252,6 +253,15 @@ export async function deleteMember(id: string): Promise<ActionResult> {
 export type PlanRowInput = { section: PlSection; label: string; values: number[]; auto: number[] | null };
 
 export async function savePlan(fy: number, rows: PlanRowInput[]): Promise<ActionResult> {
+  return saveEntries("save_pl_plan", fy, rows);
+}
+
+// 結果の手入力（PLの「結果」列に自動計算より優先して反映）
+export async function savePlActual(fy: number, rows: PlanRowInput[]): Promise<ActionResult> {
+  return saveEntries("save_pl_actual", fy, rows);
+}
+
+async function saveEntries(rpc: "save_pl_plan" | "save_pl_actual", fy: number, rows: PlanRowInput[]): Promise<ActionResult> {
   await requireAdmin();
 
   if (!Number.isInteger(fy)) return { error: "事業年度が不正です。" };
@@ -289,7 +299,7 @@ export async function savePlan(fy: number, rows: PlanRowInput[]): Promise<Action
   const last = new Date(Date.parse(`${toExclusive}T00:00:00Z`) - 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
 
   const supabase = await createClient();
-  const { error } = await supabase.rpc("save_pl_plan", { p_from: from, p_to: last, p_rows: entries });
+  const { error } = await supabase.rpc(rpc, { p_from: from, p_to: last, p_rows: entries });
   if (error) return { error: `保存に失敗しました: ${error.message}` };
 
   revalidateAccounting();

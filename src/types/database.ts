@@ -144,6 +144,9 @@ export type PlPlanEntry = {
   sort_order: number;
 };
 
+// 結果の手入力値（pl_actual_entries）。形は計画と同じ
+export type PlActualEntry = PlPlanEntry;
+
 export type OpConfirmedQuantity = {
   id: string;
   project_id: string;

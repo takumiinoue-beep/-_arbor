@@ -6,6 +6,7 @@ import { usePathname } from "next/navigation";
 const TABS = [
   { href: "/accounting/pl", label: "月次PL（計画と結果）" },
   { href: "/accounting/plan", label: "計画入力" },
+  { href: "/accounting/actual", label: "結果入力" },
   { href: "/accounting/members", label: "メンバー・人件費" },
   { href: "/accounting/expenses", label: "経費" },
   { href: "/accounting/vendor-invoices", label: "取引先請求" },

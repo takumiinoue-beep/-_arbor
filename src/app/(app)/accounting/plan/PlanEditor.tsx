@@ -4,18 +4,20 @@ import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { SECTION_LABELS, monthLabel, formatYen } from "@/lib/accounting";
 import type { PlSection } from "@/types/database";
-import { savePlan } from "../actions";
+import { savePlActual, savePlan } from "../actions";
 
 export type EditorRow = { section: PlSection; label: string; values: string[]; auto: string[] | null; fixed: boolean };
 
 const SECTIONS: PlSection[] = ["sales", "labor", "outsource", "sga"];
 
 export function PlanEditor({
+  mode = "plan",
   fy,
   months,
   initialRows,
   suggestions,
 }: {
+  mode?: "plan" | "actual";
   fy: number;
   months: string[];
   initialRows: EditorRow[];
@@ -68,7 +70,7 @@ export function PlanEditor({
 
   function handleSave() {
     startTransition(async () => {
-      const result = await savePlan(
+      const result = await (mode === "plan" ? savePlan : savePlActual)(
         fy,
         rows.map((r) => ({
           section: r.section,
@@ -92,11 +94,20 @@ export function PlanEditor({
   return (
     <div className="flex flex-col gap-4">
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <p className="text-xs text-slate-500">
-          メンバー人件費・経費・取引先請求の登録内容は、計画に<span className="mx-1 rounded bg-sky-100 px-1 text-sky-700">自動で反映</span>されます（青い欄）。
-          金額を書き換えた月だけが手入力として保存されます（0円には変更できないので、不要な登録は削除してください）。
-          売上は手入力です。行名にOP名を入れると、結果の行と同じ行に並び、そのOPのインセンティブの計画計算にも使われます。
-        </p>
+        {mode === "plan" ? (
+          <p className="text-xs text-slate-500">
+            メンバー人件費・経費・取引先請求の登録内容は、計画に<span className="mx-1 rounded bg-sky-100 px-1 text-sky-700">自動で反映</span>されます（青い欄）。
+            金額を書き換えた月だけが手入力として保存されます（0円には変更できないので、不要な登録は削除してください）。
+            売上は手入力です。行名にOP名を入れると、結果の行と同じ行に並び、そのOPのインセンティブの計画計算にも使われます。
+          </p>
+        ) : (
+          <p className="text-xs text-slate-500">
+            売上（獲得登録・有効件数）・メンバー人件費・経費・取引先請求の登録内容から、結果は
+            <span className="mx-1 rounded bg-sky-100 px-1 text-sky-700">自動で計算</span>されています（青い欄）。
+            実際の数字と違う月は、金額を書き換えて保存してください。書き換えた月だけが手入力として優先され、他の月は自動計算のままです
+            （「自動に戻す」で元に戻せます。0円には変更できません）。
+          </p>
+        )}
         <div className="flex items-center gap-3">
           {message && (
             <span className={`text-sm ${message.type === "ok" ? "text-emerald-600" : "text-red-600"}`}>
