@@ -89,7 +89,9 @@ export function monthLabel(key: string): string {
 
 // ---------- PLの入力（計画・実績で共通の形） ----------
 
-export type PlLine = { label: string; values: number[] };
+// 金額の内訳（カーソルを当てたときに表示する）
+export type PlDetail = { text: string; amount: number };
+export type PlLine = { label: string; values: number[]; details?: PlDetail[][] };
 export type PlInput = Record<PlSection, PlLine[]>;
 
 const zeros = () => Array<number>(12).fill(0);
@@ -100,14 +102,23 @@ export function emptyPlInput(): PlInput {
 
 class LineBook {
   private map = new Map<string, number[]>();
-  add(label: string, monthIndex: number, amount: number) {
+  private details = new Map<string, PlDetail[][]>();
+
+  add(label: string, monthIndex: number, amount: number, detail?: string) {
     if (monthIndex < 0 || !amount) return;
     const values = this.map.get(label) ?? zeros();
     values[monthIndex] += amount;
     this.map.set(label, values);
+
+    if (detail) {
+      const d = this.details.get(label) ?? Array.from({ length: 12 }, () => [] as PlDetail[]);
+      d[monthIndex].push({ text: detail, amount });
+      this.details.set(label, d);
+    }
   }
+
   lines(): PlLine[] {
-    return Array.from(this.map, ([label, values]) => ({ label, values }));
+    return Array.from(this.map, ([label, values]) => ({ label, values, details: this.details.get(label) }));
   }
 }
 
@@ -183,9 +194,15 @@ export function resolvePlan(
       const key = planKey(section, label);
       const o = overrides.get(key);
       const a = autoMap.get(key);
+      const autoDetails = auto[section].find((l) => l.label === label)?.details;
       input[section].push({
         label,
         values: Array.from({ length: 12 }, (_, i) => o?.values[i] ?? a?.[i] ?? 0),
+        details: Array.from({ length: 12 }, (_, i) => {
+          const manual = o?.values[i];
+          if (manual != null) return [{ text: "計画入力で手入力した金額", amount: manual }];
+          return autoDetails?.[i] ?? [];
+        }),
       });
     }
   }
@@ -261,28 +278,34 @@ export function buildActualInput(args: {
       if (month < startKey || (endKey && month > endKey)) return;
 
       const cost = Number(member.monthly_cost);
+      const costText = `${member.name}（${memberKindLabel(member.kind)}・月額）`;
       switch (member.kind) {
         case "labor_existing":
-          labor.add("直雇用（既存）", idx, cost);
+          labor.add("直雇用（既存）", idx, cost, costText);
           break;
         case "labor_new":
-          labor.add("直雇用（新人）", idx, cost);
+          labor.add("直雇用（新人）", idx, cost, costText);
           break;
         case "outsource":
-          outsource.add(member.name, idx, cost);
+          outsource.add(member.name, idx, cost, costText);
           break;
         case "executive":
-          sga.add("役員報酬", idx, cost);
+          sga.add("役員報酬", idx, cost, costText);
           break;
         case "salary":
-          sga.add("給料手当", idx, cost);
+          sga.add("給料手当", idx, cost, costText);
           break;
       }
-      sga.add("法定福利費", idx, Number(member.monthly_social_insurance));
+      sga.add("法定福利費", idx, Number(member.monthly_social_insurance), `${member.name}（月額）`);
 
       if (member.profile_id && member.incentive_tiers?.length) {
         const memberSales = salesByStaff.get(member.profile_id)?.get(month) ?? 0;
-        sga.add("インセンティブ", idx, incentiveFor(member.incentive_tiers, memberSales));
+        sga.add(
+          "インセンティブ",
+          idx,
+          incentiveFor(member.incentive_tiers, memberSales),
+          `${member.name}（売上${formatShortYen(memberSales)}の段階）`
+        );
       }
     });
   }
@@ -291,18 +314,25 @@ export function buildActualInput(args: {
   for (const e of expenses) {
     months.forEach((month, idx) => {
       if (!isExpenseActive(e, month)) return;
-      if (e.account === COGS_OUTSOURCE_ACCOUNT) outsource.add("外注（経費）", idx, Number(e.amount));
-      else sga.add(e.account, idx, Number(e.amount));
+      const text = `経費：${e.description || "（内容なし）"}${
+        e.ongoing || (e.end_month && e.end_month.slice(0, 7) !== e.expense_month.slice(0, 7))
+          ? `（${expensePeriodLabel(e)}）`
+          : ""
+      }`;
+      if (e.account === COGS_OUTSOURCE_ACCOUNT) outsource.add("外注（経費）", idx, Number(e.amount), text);
+      else sga.add(e.account, idx, Number(e.amount), text);
     });
   }
 
   // 取引先からの請求（税抜で計上）
   for (const v of vendorInvoices) {
     const idx = monthIndex(v.invoice_date.slice(0, 7));
+    const vendor = v.vendor_name || v.client?.name || "取引先";
+    const text = `取引先請求：${vendor}${v.description ? `／${v.description}` : ""}（${v.invoice_date}）`;
     if (v.account === COGS_OUTSOURCE_ACCOUNT) {
-      outsource.add(v.vendor_name || v.client?.name || "外注（取引先請求）", idx, Number(v.subtotal));
+      outsource.add(v.vendor_name || v.client?.name || "外注（取引先請求）", idx, Number(v.subtotal), text);
     } else {
-      sga.add(v.account, idx, Number(v.subtotal));
+      sga.add(v.account, idx, Number(v.subtotal), text);
     }
   }
 
@@ -361,6 +391,8 @@ export type PlRow = {
   actual: (number | null)[];
   planTotal: number | null;
   actualTotal: number | null;
+  planDetails?: PlDetail[][];
+  actualDetails?: PlDetail[][];
 };
 
 const total = (values: number[]) => values.reduce((a, b) => a + b, 0);
@@ -368,6 +400,10 @@ const ratio = (num: number, den: number) => (den === 0 ? null : num / den);
 
 function valuesFor(lines: PlLine[], label: string): number[] {
   return lines.find((l) => l.label === label)?.values ?? zeros();
+}
+
+function detailsFor(lines: PlLine[], label: string): PlDetail[][] | undefined {
+  return lines.find((l) => l.label === label)?.details;
 }
 
 export function buildPlRows(plan: PlInput, actual: PlInput, showZero: boolean): PlRow[] {
@@ -394,6 +430,8 @@ export function buildPlRows(plan: PlInput, actual: PlInput, showZero: boolean): 
         actual: a,
         planTotal: total(p),
         actualTotal: total(a),
+        planDetails: detailsFor(plan[section], label),
+        actualDetails: detailsFor(actual[section], label),
       });
     });
   };

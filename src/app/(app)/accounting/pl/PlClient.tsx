@@ -6,6 +6,7 @@ import {
   formatPercentValue,
   formatYen,
   monthLabel,
+  type PlDetail,
   type PlInput,
   type PlRow,
 } from "@/lib/accounting";
@@ -27,9 +28,21 @@ function cell(row: PlRow, value: number | null): string {
   return formatYen(value);
 }
 
+type Tip = { title: string; details: PlDetail[]; total: number; left: number; top: number };
+
 export function PlClient({ months, plan, actual }: { months: string[]; plan: PlInput; actual: PlInput }) {
   const [view, setView] = useState<View>("both");
   const [showZero, setShowZero] = useState(false);
+  const [tip, setTip] = useState<Tip | null>(null);
+
+  // カーソルを当てたセルの下（右端付近では左寄せ）に内訳を出す。スクロール領域に隠れないよう fixed で描画
+  function showTip(e: React.MouseEvent<HTMLElement>, title: string, details: PlDetail[], total: number) {
+    const rect = e.currentTarget.getBoundingClientRect();
+    const width = 320;
+    const left = Math.max(8, Math.min(rect.left, window.innerWidth - width - 8));
+    const top = rect.bottom + 6 + 200 > window.innerHeight ? Math.max(8, rect.top - 6 - 200) : rect.bottom + 6;
+    setTip({ title, details, total, left, top });
+  }
 
   const rows = useMemo(() => buildPlRows(plan, actual, showZero), [plan, actual, showZero]);
 
@@ -49,16 +62,45 @@ export function PlClient({ months, plan, actual }: { months: string[]; plan: PlI
     </button>
   );
 
-  const numCell = (row: PlRow, value: number | null, key: string, tone: "plan" | "actual") => (
-    <td
-      key={key}
-      className={`whitespace-nowrap px-2 py-1 text-right ${
-        tone === "actual" ? "bg-sky-50/60" : ""
-      } ${value !== null && value < 0 ? "text-red-600" : ""}`}
-    >
-      {cell(row, value)}
-    </td>
-  );
+  const numCell = (
+    row: PlRow,
+    value: number | null,
+    key: string,
+    tone: "plan" | "actual",
+    monthText: string,
+    details?: PlDetail[]
+  ) => {
+    const hasDetails = !!details && details.length > 0;
+    return (
+      <td
+        key={key}
+        onMouseEnter={
+          hasDetails
+            ? (e) =>
+                showTip(
+                  e,
+                  `${row.label}　${monthText}（${tone === "plan" ? "計画" : "結果"}）`,
+                  details!,
+                  value ?? 0
+                )
+            : undefined
+        }
+        onMouseLeave={hasDetails ? () => setTip(null) : undefined}
+        className={`whitespace-nowrap px-2 py-1 text-right ${tone === "actual" ? "bg-sky-50/60" : ""} ${
+          value !== null && value < 0 ? "text-red-600" : ""
+        } ${hasDetails ? "cursor-help underline decoration-dotted decoration-slate-300 underline-offset-2" : ""}`}
+      >
+        {cell(row, value)}
+      </td>
+    );
+  };
+
+  // 合計列の内訳：12か月分をまとめる（同じ内容は金額を合算）
+  const totalDetails = (all: PlDetail[][] | undefined): PlDetail[] => {
+    const merged = new Map<string, number>();
+    for (const month of all ?? []) for (const d of month) merged.set(d.text, (merged.get(d.text) ?? 0) + d.amount);
+    return Array.from(merged, ([text, amount]) => ({ text, amount }));
+  };
 
   return (
     <div className="flex flex-col gap-3">
@@ -128,18 +170,41 @@ export function PlClient({ months, plan, actual }: { months: string[]; plan: PlI
                   {row.label}
                 </td>
                 {months.flatMap((m, i) => [
-                  showPlan && numCell(row, row.plan[i], `${m}-p`, "plan"),
-                  showActual && numCell(row, row.actual[i], `${m}-a`, "actual"),
+                  showPlan && numCell(row, row.plan[i], `${m}-p`, "plan", monthLabel(m), row.planDetails?.[i]),
+                  showActual && numCell(row, row.actual[i], `${m}-a`, "actual", monthLabel(m), row.actualDetails?.[i]),
                 ])}
-                {showPlan && numCell(row, row.planTotal, "t-p", "plan")}
-                {showActual && numCell(row, row.actualTotal, "t-a", "actual")}
+                {showPlan && numCell(row, row.planTotal, "t-p", "plan", "年間合計", totalDetails(row.planDetails))}
+                {showActual &&
+                  numCell(row, row.actualTotal, "t-a", "actual", "年間合計", totalDetails(row.actualDetails))}
               </tr>
             ))}
           </tbody>
         </table>
       </div>
 
+      {tip && (
+        <div
+          className="pointer-events-none fixed z-50 w-80 rounded-lg border border-slate-200 bg-white p-3 text-xs shadow-xl"
+          style={{ left: tip.left, top: tip.top }}
+        >
+          <p className="mb-1.5 font-semibold text-slate-800">{tip.title}</p>
+          <ul className="flex flex-col gap-1">
+            {tip.details.map((d, i) => (
+              <li key={i} className="flex items-start justify-between gap-3">
+                <span className="text-slate-600">{d.text}</span>
+                <span className="whitespace-nowrap font-medium text-slate-800">{formatYen(d.amount)}</span>
+              </li>
+            ))}
+          </ul>
+          <p className="mt-1.5 flex justify-between border-t border-slate-100 pt-1.5 font-semibold text-slate-800">
+            <span>合計</span>
+            <span>{formatYen(tip.total)}</span>
+          </p>
+        </div>
+      )}
+
       <p className="text-xs text-slate-400">
+        ※ 金額にカーソルを当てると、その内訳（登録した経費・メンバー・取引先請求）が表示されます。<br />
         ※ 売上は「OPごとの請求金額（単価×有効件数）」を、獲得件数の月別の比率で各月に按分した金額です。
         人件費は「メンバー・人件費」、販管費は「経費」「取引先請求」の登録から、結果は自動で集計されます。
         計画は「計画入力」で入力します。
