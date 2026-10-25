@@ -15,8 +15,8 @@ type View = "both" | "plan" | "actual";
 
 const ROW_STYLE: Record<string, string> = {
   line: "",
-  subtotal: "bg-indigo-100 font-semibold text-indigo-950",
-  total: "bg-indigo-200 font-bold text-indigo-950 [&>td]:border-t-2 [&>td]:border-indigo-300",
+  subtotal: "bg-slate-200 font-semibold text-slate-900",
+  total: "bg-slate-300 font-bold text-slate-900 [&>td]:border-t-2 [&>td]:border-slate-400",
   highlight: "bg-yellow-100 font-bold",
   percent: "bg-yellow-50 font-semibold text-slate-700",
   memo: "text-slate-600",
@@ -25,8 +25,8 @@ const ROW_STYLE: Record<string, string> = {
 // 結果列の背景（小計・合計は行の色より一段濃くして計画列と見分ける）
 const ACTUAL_STYLE: Record<string, string> = {
   line: "bg-sky-50/60",
-  subtotal: "bg-indigo-200/70",
-  total: "bg-indigo-300/70",
+  subtotal: "bg-slate-300/70",
+  total: "bg-slate-400/60",
   highlight: "bg-yellow-200",
   percent: "bg-yellow-100",
   memo: "bg-sky-50/60",
