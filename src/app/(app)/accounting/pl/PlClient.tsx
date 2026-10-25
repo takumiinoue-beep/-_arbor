@@ -15,11 +15,21 @@ type View = "both" | "plan" | "actual";
 
 const ROW_STYLE: Record<string, string> = {
   line: "",
-  subtotal: "bg-slate-50 font-semibold",
-  total: "bg-slate-100 font-semibold",
+  subtotal: "bg-indigo-100 font-semibold text-indigo-950",
+  total: "bg-indigo-200 font-bold text-indigo-950 [&>td]:border-t-2 [&>td]:border-indigo-300",
   highlight: "bg-yellow-100 font-bold",
   percent: "bg-yellow-50 font-semibold text-slate-700",
   memo: "text-slate-600",
+};
+
+// 結果列の背景（小計・合計は行の色より一段濃くして計画列と見分ける）
+const ACTUAL_STYLE: Record<string, string> = {
+  line: "bg-sky-50/60",
+  subtotal: "bg-indigo-200/70",
+  total: "bg-indigo-300/70",
+  highlight: "bg-yellow-200",
+  percent: "bg-yellow-100",
+  memo: "bg-sky-50/60",
 };
 
 function cell(row: PlRow, value: number | null): string {
@@ -86,7 +96,7 @@ export function PlClient({ months, plan, actual }: { months: string[]; plan: PlI
             : undefined
         }
         onMouseLeave={hasDetails ? () => setTip(null) : undefined}
-        className={`whitespace-nowrap px-2 py-1 text-right ${tone === "actual" ? "bg-sky-50/60" : ""} ${
+        className={`whitespace-nowrap px-2 py-1 text-right ${tone === "actual" ? ACTUAL_STYLE[row.kind] : ""} ${
           value !== null && value < 0 ? "text-red-600" : ""
         } ${hasDetails ? "cursor-help underline decoration-dotted decoration-slate-300 underline-offset-2" : ""}`}
       >
