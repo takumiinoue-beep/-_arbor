@@ -19,7 +19,7 @@ const ROW_STYLE: Record<string, string> = {
   total: "bg-slate-300 font-bold text-slate-900 [&>td]:border-t-2 [&>td]:border-slate-400",
   highlight: "bg-yellow-100 font-bold",
   percent: "bg-yellow-50 font-semibold text-slate-700",
-  memo: "text-slate-600",
+  memo: "bg-white text-slate-600",
 };
 
 // 結果列の背景（小計・合計は行の色より一段濃くして計画列と見分ける）
