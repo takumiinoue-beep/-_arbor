@@ -1,6 +1,7 @@
 import { createClient } from "@/lib/supabase/server";
 import {
   buildAutoPlan,
+  expenseOverlapFilter,
   fiscalMonths,
   fiscalRange,
   planKey,
@@ -27,7 +28,7 @@ export default async function PlanPage({
     await Promise.all([
       supabase.from("pl_plan_entries").select("*").gte("plan_month", from).lt("plan_month", toExclusive),
       supabase.from("members").select("*"),
-      supabase.from("expenses").select("*").gte("expense_month", from).lt("expense_month", toExclusive),
+      supabase.from("expenses").select("*").lt("expense_month", toExclusive).or(expenseOverlapFilter(from)),
       supabase
         .from("vendor_invoices")
         .select("*, client:clients(name)")

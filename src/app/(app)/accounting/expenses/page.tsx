@@ -1,5 +1,5 @@
 import { createClient } from "@/lib/supabase/server";
-import { fiscalRange } from "@/lib/accounting";
+import { expenseOverlapFilter, fiscalMonths, fiscalRange } from "@/lib/accounting";
 import type { Expense } from "@/types/database";
 import { FiscalYearNav } from "../FiscalYearNav";
 import { resolveFiscalYear } from "../fy";
@@ -17,8 +17,8 @@ export default async function ExpensesPage({
   const { data: expenses } = await supabase
     .from("expenses")
     .select("*")
-    .gte("expense_month", from)
     .lt("expense_month", toExclusive)
+    .or(expenseOverlapFilter(from))
     .order("expense_month", { ascending: false })
     .order("created_at", { ascending: false });
 
@@ -27,6 +27,7 @@ export default async function ExpensesPage({
       <FiscalYearNav basePath="/accounting/expenses" fy={fy} />
       <ExpensesClient
         key={fy}
+        months={fiscalMonths(fy)}
         expenses={(expenses as Expense[]) ?? []}
         defaultMonth={new Date().toISOString().slice(0, 7)}
       />

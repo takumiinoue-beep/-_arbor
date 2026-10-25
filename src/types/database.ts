@@ -107,6 +107,8 @@ export type Member = {
 export type Expense = {
   id: string;
   expense_month: string;
+  end_month: string | null;
+  ongoing: boolean;
   account: string;
   amount: number;
   description: string | null;

@@ -40,17 +40,27 @@ export async function createExpense(_prev: ActionResult, formData: FormData): Pr
   const profile = await requireAdmin();
 
   const month = monthToDate(String(formData.get("expense_month") ?? ""));
+  const periodType = String(formData.get("period_type") ?? "single");
+  const endMonthRaw = String(formData.get("end_month") ?? "").trim();
+  const endMonth = periodType === "range" ? monthToDate(endMonthRaw) : null;
   const account = String(formData.get("account") ?? "");
   const description = String(formData.get("description") ?? "").trim();
   const amount = parseAmount(formData.get("amount"), "金額");
 
-  if (!month) return { error: "対象月を入力してください。" };
+  if (!month) return { error: "開始月（対象月）を入力してください。" };
+  if (!["single", "range", "ongoing"].includes(periodType)) return { error: "期間の種類が不正です。" };
+  if (periodType === "range") {
+    if (!endMonth) return { error: "終了月を入力してください。" };
+    if (endMonth < month) return { error: "終了月は開始月以降にしてください。" };
+  }
   if (!ACCOUNT_OPTIONS.includes(account)) return { error: "勘定科目を選択してください。" };
   if (!amount.ok) return { error: amount.error };
 
   const supabase = await createClient();
   const { error } = await supabase.from("expenses").insert({
     expense_month: month,
+    end_month: endMonth,
+    ongoing: periodType === "ongoing",
     account,
     amount: amount.value,
     description: description || null,

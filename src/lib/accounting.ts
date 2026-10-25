@@ -193,6 +193,29 @@ export function resolvePlan(
   return { input, autoMap };
 }
 
+// その経費が指定月に計上されるか（単月／期間指定／継続）
+export function isExpenseActive(
+  e: Pick<Expense, "expense_month" | "end_month" | "ongoing">,
+  month: string
+): boolean {
+  const start = e.expense_month.slice(0, 7);
+  if (month < start) return false;
+  if (e.ongoing) return true;
+  return month <= (e.end_month ? e.end_month.slice(0, 7) : start);
+}
+
+export function expensePeriodLabel(e: Pick<Expense, "expense_month" | "end_month" | "ongoing">): string {
+  const start = e.expense_month.slice(0, 7);
+  if (e.ongoing) return `${start} 〜 継続`;
+  if (e.end_month && e.end_month.slice(0, 7) !== start) return `${start} 〜 ${e.end_month.slice(0, 7)}`;
+  return start;
+}
+
+// 事業年度[from, toExclusive)に1か月でも重なる経費を取得するための、PostgREST用のOR条件
+export function expenseOverlapFilter(from: string): string {
+  return `ongoing.eq.true,end_month.gte.${from},expense_month.gte.${from}`;
+}
+
 // 月の売上が達した最も高い段階の金額（どの段階にも届かなければ0）
 export function incentiveFor(tiers: IncentiveTier[], sales: number): number {
   let result = 0;
@@ -264,11 +287,13 @@ export function buildActualInput(args: {
     });
   }
 
-  // 経費
+  // 経費（期間指定・継続の経費は、該当する各月に同額を計上）
   for (const e of expenses) {
-    const idx = monthIndex(e.expense_month.slice(0, 7));
-    if (e.account === COGS_OUTSOURCE_ACCOUNT) outsource.add("外注（経費）", idx, Number(e.amount));
-    else sga.add(e.account, idx, Number(e.amount));
+    months.forEach((month, idx) => {
+      if (!isExpenseActive(e, month)) return;
+      if (e.account === COGS_OUTSOURCE_ACCOUNT) outsource.add("外注（経費）", idx, Number(e.amount));
+      else sga.add(e.account, idx, Number(e.amount));
+    });
   }
 
   // 取引先からの請求（税抜で計上）

@@ -5,6 +5,7 @@ import { monthlyBilledByStaff, type OpConfirmedRecord, type SalesAcquisition } f
 import {
   buildActualInput,
   buildAutoPlan,
+  expenseOverlapFilter,
   fiscalMonths,
   fiscalRange,
   planSalesByStaff,
@@ -47,7 +48,7 @@ export default async function PlPage({
         .range(a, b)
     ),
     supabase.from("members").select("*"),
-    supabase.from("expenses").select("*").gte("expense_month", from).lt("expense_month", toExclusive),
+    supabase.from("expenses").select("*").lt("expense_month", toExclusive).or(expenseOverlapFilter(from)),
     supabase
       .from("vendor_invoices")
       .select("*, client:clients(name)")
