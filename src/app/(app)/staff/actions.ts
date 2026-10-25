@@ -57,12 +57,29 @@ export async function updateStaff(id: string, _prevState: FormState, formData: F
   redirect("/invoices/company");
 }
 
-export async function deleteStaff(id: string) {
+// 画面にメッセージを返すため、失敗は throw せず { error } で返す（本番では throw したメッセージが伏せられる）
+export async function deleteStaff(id: string): Promise<{ error: string } | null> {
   await requireAdmin();
+
+  // 売上データが失われないよう、案件の担当・案件獲得のOPになっている担当者は削除しない
+  const supabase = await createClient();
+  const [{ count: projectCount }, { count: acquisitionCount }] = await Promise.all([
+    supabase.from("projects").select("id", { count: "exact", head: true }).eq("staff_id", id),
+    supabase.from("acquisitions").select("id", { count: "exact", head: true }).eq("staff_id", id),
+  ]);
+  if (projectCount) {
+    return { error: `この担当者は${projectCount}件の案件の担当になっています。先に案件の担当者を別の人へ変更してください。` };
+  }
+  if (acquisitionCount) {
+    return { error: `この担当者(OP)の案件獲得の登録が${acquisitionCount}件あります。売上の記録が残っているため削除できません。` };
+  }
+
   const admin = createAdminClient();
   const { error } = await admin.auth.admin.deleteUser(id);
-  if (error) throw new Error(error.message);
+  if (error) return { error: `削除に失敗しました: ${error.message}` };
 
   revalidatePath("/invoices/company");
   revalidatePath("/projects");
+  revalidatePath("/accounting/members");
+  return null;
 }
