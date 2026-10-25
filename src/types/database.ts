@@ -86,6 +86,8 @@ export type Acquisition = {
 
 export type MemberKind = "labor_existing" | "labor_new" | "outsource" | "executive" | "salary";
 
+export type IncentiveTier = { threshold: number; amount: number };
+
 export type Member = {
   id: string;
   name: string;
@@ -95,6 +97,7 @@ export type Member = {
   monthly_social_insurance: number;
   incentive_sales_unit: number | null;
   incentive_amount: number | null;
+  incentive_tiers: IncentiveTier[];
   start_month: string;
   end_month: string | null;
   notes: string | null;

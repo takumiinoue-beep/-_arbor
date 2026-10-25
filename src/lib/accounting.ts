@@ -1,4 +1,4 @@
-import type { Expense, Member, MemberKind, PlPlanEntry, PlSection, VendorInvoice } from "@/types/database";
+import type { Expense, IncentiveTier, Member, MemberKind, PlPlanEntry, PlSection, VendorInvoice } from "@/types/database";
 
 // 事業年度の開始月（PDFのPLは9月始まり〜8月）
 export const FISCAL_START_MONTH = 9;
@@ -193,6 +193,19 @@ export function resolvePlan(
   return { input, autoMap };
 }
 
+// 月の売上が達した最も高い段階の金額（どの段階にも届かなければ0）
+export function incentiveFor(tiers: IncentiveTier[], sales: number): number {
+  let result = 0;
+  let reached = -1;
+  for (const t of tiers) {
+    if (sales >= Number(t.threshold) && Number(t.threshold) > reached) {
+      reached = Number(t.threshold);
+      result = Number(t.amount);
+    }
+  }
+  return result;
+}
+
 // 実績（結果）：売上・メンバー人件費・経費・取引先請求から組み立てる
 export function buildActualInput(args: {
   months: string[];
@@ -244,10 +257,9 @@ export function buildActualInput(args: {
       }
       sga.add("法定福利費", idx, Number(member.monthly_social_insurance));
 
-      if (member.profile_id && member.incentive_sales_unit && member.incentive_amount) {
+      if (member.profile_id && member.incentive_tiers?.length) {
         const memberSales = salesByStaff.get(member.profile_id)?.get(month) ?? 0;
-        const steps = Math.floor(memberSales / Number(member.incentive_sales_unit));
-        sga.add("インセンティブ", idx, steps * Number(member.incentive_amount));
+        sga.add("インセンティブ", idx, incentiveFor(member.incentive_tiers, memberSales));
       }
     });
   }
@@ -394,6 +406,12 @@ export function buildPlRows(plan: PlInput, actual: PlInput, showZero: boolean): 
   summary("burn", "memo", "バーンレート（原価＋販管費）", pt.burn, at.burn);
 
   return rows;
+}
+
+// 80万円・5,000円のように短く表示する
+export function formatShortYen(value: number): string {
+  if (value >= 10000 && value % 10000 === 0) return `${value / 10000}万円`;
+  return `${value.toLocaleString("ja-JP")}円`;
 }
 
 export function formatYen(value: number): string {

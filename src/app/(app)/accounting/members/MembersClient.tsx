@@ -3,16 +3,23 @@
 import { useActionState, useEffect, useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import Modal from "@/components/common/Modal";
-import { MEMBER_KINDS, formatYen, memberKindLabel } from "@/lib/accounting";
+import { MEMBER_KINDS, formatShortYen, formatYen, memberKindLabel } from "@/lib/accounting";
 import type { Member, Profile } from "@/types/database";
 import { deleteMember, saveMember } from "../actions";
 
 type Staff = Pick<Profile, "id" | "name">;
 
 function describeIncentive(m: Member): string {
-  if (!m.incentive_sales_unit || m.incentive_amount === null) return "-";
-  return `売上${formatYen(Number(m.incentive_sales_unit))}ごとに${formatYen(Number(m.incentive_amount))}`;
+  const tiers = m.incentive_tiers ?? [];
+  if (tiers.length === 0) return "-";
+  const shown = tiers
+    .slice(0, 3)
+    .map((t) => `${formatShortYen(Number(t.threshold))}→${formatShortYen(Number(t.amount))}`)
+    .join(" / ");
+  return tiers.length > 3 ? `${shown} ほか${tiers.length - 3}段階` : shown;
 }
+
+type TierRow = { threshold: string; amount: string };
 
 function MemberForm({
   member,
@@ -28,8 +35,13 @@ function MemberForm({
   const [state, formAction, pending] = useActionState(saveMember, null);
   const wasPending = useRef(false);
   const router = useRouter();
-  const [unit, setUnit] = useState(member?.incentive_sales_unit != null ? String(member.incentive_sales_unit) : "");
-  const [amount, setAmount] = useState(member?.incentive_amount != null ? String(member.incentive_amount) : "");
+  const [tiers, setTiers] = useState<TierRow[]>(
+    (member?.incentive_tiers ?? []).map((t) => ({ threshold: String(t.threshold), amount: String(t.amount) }))
+  );
+
+  function updateTier(idx: number, patch: Partial<TierRow>) {
+    setTiers((prev) => prev.map((t, i) => (i === idx ? { ...t, ...patch } : t)));
+  }
 
   useEffect(() => {
     if (wasPending.current && !pending && !state?.error) {
@@ -105,35 +117,61 @@ function MemberForm({
       </div>
 
       <div className="rounded-lg border border-slate-200 p-3">
-        <p className="mb-2 text-sm font-semibold text-slate-700">インセンティブ（任意）</p>
-        <div className="grid grid-cols-2 gap-4">
-          <div className="flex flex-col gap-1">
-            <label className={label}>売上（円）ごとに</label>
-            <input
-              name="incentive_sales_unit"
-              type="number"
-              min={1}
-              step={1}
-              value={unit}
-              onChange={(e) => setUnit(e.target.value)}
-              placeholder="例：1000000"
-              className={field}
-            />
+        <input type="hidden" name="incentive_tiers" value={JSON.stringify(tiers)} />
+        <p className="mb-1 text-sm font-semibold text-slate-700">インセンティブ（任意）</p>
+        <p className="mb-2 text-xs text-slate-500">
+          月の売上が「◯円以上」になったとき支給する金額を、段階ごとに設定します。金額は不規則でも構いません。
+          売上が複数の段階に届いたときは、届いた中で一番高い段階の金額になります。
+        </p>
+
+        {tiers.length > 0 && (
+          <div className="mb-2 flex flex-col gap-2">
+            {tiers.map((t, idx) => (
+              <div key={idx} className="flex items-center gap-2">
+                <input
+                  type="number"
+                  min={1}
+                  step={1}
+                  value={t.threshold}
+                  onChange={(e) => updateTier(idx, { threshold: e.target.value })}
+                  placeholder="売上（円）例：800000"
+                  className={`${field} w-48`}
+                />
+                <span className="w-12 text-xs text-slate-500">
+                  {Number(t.threshold) > 0 ? formatShortYen(Number(t.threshold)) : ""}
+                </span>
+                <span className="text-xs text-slate-500">以上 →</span>
+                <input
+                  type="number"
+                  min={0}
+                  step={1}
+                  value={t.amount}
+                  onChange={(e) => updateTier(idx, { amount: e.target.value })}
+                  placeholder="金額（円）例：50000"
+                  className={`${field} w-44`}
+                />
+                <span className="w-14 text-xs text-slate-500">
+                  {t.amount !== "" && Number(t.amount) >= 0 ? formatShortYen(Number(t.amount)) : ""}
+                </span>
+                <button
+                  type="button"
+                  onClick={() => setTiers((prev) => prev.filter((_, i) => i !== idx))}
+                  className="text-xs text-red-500 hover:underline"
+                >
+                  削除
+                </button>
+              </div>
+            ))}
           </div>
-          <div className="flex flex-col gap-1">
-            <label className={label}>インセンティブ（円）</label>
-            <input
-              name="incentive_amount"
-              type="number"
-              min={0}
-              step={1}
-              value={amount}
-              onChange={(e) => setAmount(e.target.value)}
-              placeholder="例：100000"
-              className={field}
-            />
-          </div>
-        </div>
+        )}
+        <button
+          type="button"
+          onClick={() => setTiers((prev) => [...prev, { threshold: "", amount: "" }])}
+          className="text-sm font-medium text-emerald-700 hover:text-emerald-800"
+        >
+          ＋ 段階を追加
+        </button>
+
         <div className="mt-3 flex flex-col gap-1">
           <label className={label}>売上の対象となるログインアカウント（OP）</label>
           <select name="profile_id" defaultValue={member?.profile_id ?? ""} className={field}>
@@ -144,12 +182,10 @@ function MemberForm({
               </option>
             ))}
           </select>
+          <p className="text-xs text-slate-500">
+            紐づけたOPの月間売上（請求金額）で判定し、販管費の「インセンティブ」に計上します。
+          </p>
         </div>
-        <p className="mt-2 text-xs text-slate-500">
-          {unit && amount
-            ? `例：そのOPの月の売上が${formatYen(Number(unit))}を超えるごとに${formatYen(Number(amount))}（${formatYen(Number(unit) * 2)}なら${formatYen(Number(amount) * 2)}）を、販管費の「インセンティブ」に計上します。`
-            : "売上と金額の両方を入力すると、紐づけたOPの月間売上に応じて自動計算されます。"}
-        </p>
       </div>
 
       <div className="flex flex-col gap-1">

@@ -133,6 +133,43 @@ export async function deleteVendorInvoice(id: string): Promise<ActionResult> {
 
 // ---------- メンバー ----------
 
+function parseIncentiveTiers(
+  raw: string
+): { ok: true; value: { threshold: number; amount: number }[] } | { ok: false; error: string } {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(raw || "[]");
+  } catch {
+    return { ok: false, error: "インセンティブの形式が不正です。" };
+  }
+  if (!Array.isArray(parsed)) return { ok: false, error: "インセンティブの形式が不正です。" };
+
+  const tiers: { threshold: number; amount: number }[] = [];
+  for (const item of parsed) {
+    const row = (item ?? {}) as Record<string, unknown>;
+    const thresholdText = String(row.threshold ?? "").trim();
+    const amountText = String(row.amount ?? "").trim();
+    if (thresholdText === "" && amountText === "") continue; // 空行は無視
+    const threshold = Number(thresholdText);
+    const amount = Number(amountText);
+    if (!Number.isInteger(threshold) || threshold <= 0) {
+      return { ok: false, error: "インセンティブの売上は1円以上の整数で入力してください。" };
+    }
+    if (amountText === "" || !Number.isInteger(amount) || amount < 0) {
+      return { ok: false, error: "インセンティブの金額は0円以上の整数で入力してください。" };
+    }
+    tiers.push({ threshold, amount });
+  }
+
+  tiers.sort((a, b) => a.threshold - b.threshold);
+  for (let i = 1; i < tiers.length; i++) {
+    if (tiers[i].threshold === tiers[i - 1].threshold) {
+      return { ok: false, error: "同じ売上の段階が重複しています。" };
+    }
+  }
+  return { ok: true, value: tiers };
+}
+
 export async function saveMember(_prev: ActionResult, formData: FormData): Promise<ActionResult> {
   await requireAdmin();
 
@@ -146,8 +183,7 @@ export async function saveMember(_prev: ActionResult, formData: FormData): Promi
   const notes = String(formData.get("notes") ?? "").trim();
   const monthlyCost = parseAmount(formData.get("monthly_cost") ?? "0", "月額人件費");
   const social = parseAmount(formData.get("monthly_social_insurance") ?? "0", "月額法定福利費");
-  const unitRaw = String(formData.get("incentive_sales_unit") ?? "").trim();
-  const amountRaw = String(formData.get("incentive_amount") ?? "").trim();
+  const tiersRaw = String(formData.get("incentive_tiers") ?? "[]");
 
   if (!name) return { error: "名前を入力してください。" };
   if (!MEMBER_KIND_VALUES.includes(kind)) return { error: "区分を選択してください。" };
@@ -157,17 +193,8 @@ export async function saveMember(_prev: ActionResult, formData: FormData): Promi
   if (!monthlyCost.ok) return { error: monthlyCost.error };
   if (!social.ok) return { error: social.error };
 
-  let incentiveUnit: number | null = null;
-  let incentiveAmount: number | null = null;
-  if (unitRaw || amountRaw) {
-    const unit = parseAmount(unitRaw, "インセンティブの売上単位");
-    const amount = parseAmount(amountRaw, "インセンティブ額");
-    if (!unit.ok) return { error: unit.error };
-    if (!amount.ok) return { error: amount.error };
-    if (unit.value <= 0) return { error: "インセンティブの売上単位は1円以上で入力してください。" };
-    incentiveUnit = unit.value;
-    incentiveAmount = amount.value;
-  }
+  const tiers = parseIncentiveTiers(tiersRaw);
+  if (!tiers.ok) return { error: tiers.error };
 
   const value = {
     name,
@@ -175,8 +202,9 @@ export async function saveMember(_prev: ActionResult, formData: FormData): Promi
     profile_id: profileId || null,
     monthly_cost: monthlyCost.value,
     monthly_social_insurance: social.value,
-    incentive_sales_unit: incentiveUnit,
-    incentive_amount: incentiveAmount,
+    incentive_sales_unit: null,
+    incentive_amount: null,
+    incentive_tiers: tiers.value,
     start_month: startMonth,
     end_month: endMonth,
     notes: notes || null,
