@@ -3,7 +3,7 @@
 import { useActionState, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import Modal from "@/components/common/Modal";
-import type { Profile, ProjectWithStaff } from "@/types/database";
+import type { PriceRate, Profile, Project } from "@/types/database";
 import { formatCurrency } from "@/lib/format";
 import { formatYearMonth } from "@/lib/period";
 import { createAcquisition } from "./actions";
@@ -11,6 +11,10 @@ import { createAcquisition } from "./actions";
 function toToday(): string {
   return new Date().toISOString().slice(0, 10);
 }
+
+export type AcquisitionProject = Pick<Project, "id" | "name" | "start_date" | "unit_price"> & {
+  price_rates?: Pick<PriceRate, "id" | "position" | "employee_min" | "employee_max" | "unit_price">[];
+};
 
 type Row = {
   projectId: string;
@@ -21,7 +25,7 @@ type Row = {
 
 const emptyRow: Row = { projectId: "", position: "", employeeCount: "", quantity: "1" };
 
-function findMatchingRate(project: ProjectWithStaff | undefined, position: string, employeeCount: number | null) {
+function findMatchingRate(project: AcquisitionProject | undefined, position: string, employeeCount: number | null) {
   if (!project?.price_rates || !position || employeeCount === null || Number.isNaN(employeeCount)) {
     return undefined;
   }
@@ -36,8 +40,8 @@ export function AcquisitionButton({
   staffList,
   currentUserId,
 }: {
-  projects: ProjectWithStaff[];
-  staffList: Profile[];
+  projects: AcquisitionProject[];
+  staffList: Pick<Profile, "id" | "name">[];
   currentUserId: string;
 }) {
   const [open, setOpen] = useState(false);

@@ -1,13 +1,16 @@
 "use client";
 
 import { Fragment, useMemo, useState } from "react";
-import type { Acquisition, OpConfirmedQuantity, Profile, ProjectWithStaff } from "@/types/database";
+import type { Acquisition, OpConfirmedQuantity, Profile } from "@/types/database";
 import { formatCurrency } from "@/lib/format";
-import { AcquisitionButton } from "./AcquisitionButton";
+import { AcquisitionButton, type AcquisitionProject } from "./AcquisitionButton";
 import { DeleteAcquisitionButton } from "./DeleteAcquisitionButton";
 import { OpConfirmedQuantityEditor } from "./OpConfirmedQuantityEditor";
 
-export type AcquisitionRow = Acquisition & {
+export type AcquisitionRow = Pick<
+  Acquisition,
+  "id" | "acquired_date" | "project_id" | "rate_id" | "staff_id" | "unit_price" | "quantity" | "amount"
+> & {
   project: { id: string; name: string; confirmed_quantity: number } | null;
   staff: { id: string; name: string } | null;
   rate: { id: string; confirmed_quantity: number } | null;
@@ -45,7 +48,7 @@ type OpGroup = {
 function buildSalesRows(
   acquisitions: AcquisitionRow[],
   allAcquisitions: AcquisitionRow[],
-  opConfirmed: OpConfirmedQuantity[]
+  opConfirmed: Pick<OpConfirmedQuantity, "project_id" | "rate_id" | "staff_id" | "confirmed_quantity">[]
 ): SalesRow[] {
   const targetKey = (projectId: string, rateId: string | null) => `${projectId}:${rateId ?? ""}`;
 
@@ -182,10 +185,10 @@ export function DashboardClient({
   isAdmin,
   todayISO,
 }: {
-  projects: ProjectWithStaff[];
-  staffList: Profile[];
+  projects: AcquisitionProject[];
+  staffList: Pick<Profile, "id" | "name">[];
   acquisitions: AcquisitionRow[];
-  opConfirmed: OpConfirmedQuantity[];
+  opConfirmed: Pick<OpConfirmedQuantity, "project_id" | "rate_id" | "staff_id" | "confirmed_quantity">[];
   currentUserId: string;
   isAdmin: boolean;
   todayISO: string;

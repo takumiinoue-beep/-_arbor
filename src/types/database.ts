@@ -84,6 +84,61 @@ export type Acquisition = {
   created_at: string;
 };
 
+export type MemberKind = "labor_existing" | "labor_new" | "outsource" | "executive" | "salary";
+
+export type Member = {
+  id: string;
+  name: string;
+  kind: MemberKind;
+  profile_id: string | null;
+  monthly_cost: number;
+  monthly_social_insurance: number;
+  incentive_sales_unit: number | null;
+  incentive_amount: number | null;
+  start_month: string;
+  end_month: string | null;
+  notes: string | null;
+  created_at: string;
+};
+
+export type Expense = {
+  id: string;
+  expense_month: string;
+  account: string;
+  amount: number;
+  description: string | null;
+  created_by: string | null;
+  created_at: string;
+};
+
+export type VendorInvoiceStatus = "unpaid" | "paid";
+
+export type VendorInvoice = {
+  id: string;
+  client_id: number | null;
+  vendor_name: string | null;
+  invoice_date: string;
+  subtotal: number;
+  tax: number;
+  account: string;
+  description: string | null;
+  status: VendorInvoiceStatus;
+  paid_date: string | null;
+  created_by: string | null;
+  created_at: string;
+};
+
+export type PlSection = "sales" | "labor" | "outsource" | "sga";
+
+export type PlPlanEntry = {
+  id: string;
+  plan_month: string;
+  section: PlSection;
+  line_label: string;
+  amount: number;
+  sort_order: number;
+};
+
 export type OpConfirmedQuantity = {
   id: string;
   project_id: string;

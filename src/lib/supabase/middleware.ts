@@ -23,9 +23,10 @@ export async function updateSession(request: NextRequest) {
     }
   );
 
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
+  // getUser()は毎回Supabaseへ通信するが、getClaims()は非対称鍵（ES256）の署名を
+  // ローカルで検証するため通信が発生しない（期限切れ間近ならセッションを更新する）。
+  const { data } = await supabase.auth.getClaims();
+  const user = data?.claims ?? null;
 
   const isAuthRoute = request.nextUrl.pathname.startsWith("/login");
 

@@ -9,6 +9,7 @@ const navItems = [
 ];
 
 const adminNavItems = [
+  { href: "/accounting/pl", label: "会計" },
   { href: "/invoices/issue", label: "請求書発行" },
   { href: "/invoices/clients", label: "取引先" },
   { href: "/invoices/company", label: "自社情報" },

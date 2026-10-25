@@ -4,10 +4,11 @@ import type { ProjectWithStaff } from "@/types/database";
 import { ProjectsClient } from "./ProjectsClient";
 
 export default async function ProjectsPage() {
-  const profile = await requireProfile();
   const supabase = await createClient();
 
-  const [{ data: projects }, { data: staffList }] = await Promise.all([
+  // 認証確認とデータ取得を並列に行い、直列の待ち時間を減らす
+  const [profile, { data: projects }, { data: staffList }] = await Promise.all([
+    requireProfile(),
     supabase
       .from("projects")
       .select("*, staff:profiles!projects_staff_id_fkey(id, name), price_rates(*)")

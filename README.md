@@ -18,6 +18,7 @@
 - ダッシュボード（全体サマリ・粗利・担当者別集計・グラフを1ページに集約、期間タブで連動絞り込み）
 - 固定費管理（品目・金額・発生周期・合計自動集計、毎月／毎年は繰り返し計上）
 - 請求書発行（請求書番号自動生成、明細入力、リアルタイムプレビュー、ブラウザ印刷によるPDF出力、発行済一覧、入金ステータス管理、インボイス制度対応）
+- 会計（月次PLの計画と結果の並列表示、メンバー人件費・インセンティブ、経費、取引先からの請求、計画入力。事業年度は9月始まり、管理者のみ）
 - 取引先マスタ・自社情報（会社情報・自社銀行口座・担当者管理）管理
 
 ## 権限
@@ -50,6 +51,9 @@ Supabaseダッシュボードの「SQL Editor」で、`supabase/migrations/` 配
 | [`0002_project_budget_from_unit_price.sql`](supabase/migrations/0002_project_budget_from_unit_price.sql) | 予算（目標売上）を単価×件数の自動計算に変更 |
 | [`0003_actual_from_quantity.sql`](supabase/migrations/0003_actual_from_quantity.sql) | 実績を単価×実績件数の自動計算に変更、RPC更新 |
 | [`0004_invoices.sql`](supabase/migrations/0004_invoices.sql) | 請求書発行機能（`clients`／`company_bank_accounts`／`company_settings`／`invoices_issued`／`invoice_items`）とRLS（管理者のみ） |
+| [`0005`〜`0014`](supabase/migrations/) | 料金表（案件ごと）・確定件数・案件獲得ログ・自社情報の郵便番号/建物名など（ファイル名の番号順に実行） |
+| [`0015_op_confirmed_quantities.sql`](supabase/migrations/0015_op_confirmed_quantities.sql) | 有効件数をOPごとに保持（`op_confirmed_quantities`）、RPC `set_op_confirmed_quantity` |
+| [`0016_accounting.sql`](supabase/migrations/0016_accounting.sql) | 会計機能：`members`（人件費・インセンティブ設定）／`expenses`（経費）／`vendor_invoices`（取引先請求）／`pl_plan_entries`（PL計画）とRLS（管理者のみ）、RPC `save_pl_plan` |
 
 ### 3. 環境変数を設定
 

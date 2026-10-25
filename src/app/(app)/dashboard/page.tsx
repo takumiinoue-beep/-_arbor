@@ -1,23 +1,38 @@
 import { requireProfile } from "@/lib/auth";
 import { createClient } from "@/lib/supabase/server";
-import type { OpConfirmedQuantity, Profile, ProjectWithStaff } from "@/types/database";
+import { fetchAllRows } from "@/lib/supabase/fetchAll";
+import type { OpConfirmedQuantity, Profile } from "@/types/database";
 import { DashboardClient, type AcquisitionRow } from "./DashboardClient";
+import type { AcquisitionProject } from "./AcquisitionButton";
+
+const ACQUISITION_COLUMNS =
+  "id, acquired_date, project_id, rate_id, staff_id, unit_price, quantity, amount, " +
+  "project:projects(id, name, confirmed_quantity), " +
+  "staff:profiles!acquisitions_staff_id_fkey(id, name), " +
+  "rate:price_rates(id, confirmed_quantity)";
 
 export default async function DashboardPage() {
-  const profile = await requireProfile();
   const supabase = await createClient();
 
-  const [{ data: projects }, { data: staffList }, { data: acquisitions }, { data: opConfirmed }] = await Promise.all([
-    supabase.from("projects").select("*, staff:profiles!projects_staff_id_fkey(id, name), price_rates(*)"),
-    supabase.from("profiles").select("*").order("name"),
-    supabase
-      .from("acquisitions")
-      .select(
-        "*, project:projects(id, name, confirmed_quantity), staff:profiles!acquisitions_staff_id_fkey(id, name), rate:price_rates(id, confirmed_quantity)"
-      )
-      .order("acquired_date", { ascending: false }),
-    supabase.from("op_confirmed_quantities").select("*"),
-  ]);
+  // 認証確認とデータ取得を並列に行い、直列の待ち時間を減らす
+  const [profile, { data: projects }, { data: staffList }, acquisitions, { data: opConfirmed }] =
+    await Promise.all([
+      requireProfile(),
+      supabase
+        .from("projects")
+        .select("id, name, start_date, unit_price, price_rates(id, position, employee_min, employee_max, unit_price)"),
+      supabase.from("profiles").select("id, name").order("name"),
+      fetchAllRows<AcquisitionRow>((from, to) =>
+        supabase
+          .from("acquisitions")
+          .select(ACQUISITION_COLUMNS)
+          .order("acquired_date", { ascending: false })
+          .order("id")
+          .range(from, to)
+          .overrideTypes<AcquisitionRow[], { merge: false }>()
+      ),
+      supabase.from("op_confirmed_quantities").select("project_id, rate_id, staff_id, confirmed_quantity"),
+    ]);
 
   const todayISO = new Date().toISOString().slice(0, 10);
 
@@ -25,10 +40,10 @@ export default async function DashboardPage() {
     <div className="flex flex-col gap-6">
       <h1 className="text-lg font-bold text-slate-900">ダッシュボード</h1>
       <DashboardClient
-        projects={(projects as ProjectWithStaff[]) ?? []}
-        staffList={(staffList as Profile[]) ?? []}
-        acquisitions={(acquisitions as AcquisitionRow[]) ?? []}
-        opConfirmed={(opConfirmed as OpConfirmedQuantity[]) ?? []}
+        projects={(projects as AcquisitionProject[]) ?? []}
+        staffList={(staffList as Pick<Profile, "id" | "name">[]) ?? []}
+        acquisitions={acquisitions}
+        opConfirmed={(opConfirmed as Pick<OpConfirmedQuantity, "project_id" | "rate_id" | "staff_id" | "confirmed_quantity">[]) ?? []}
         currentUserId={profile.id}
         isAdmin={profile.role === "admin"}
         todayISO={todayISO}
