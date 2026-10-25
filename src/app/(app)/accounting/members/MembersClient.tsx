@@ -183,7 +183,7 @@ function MemberForm({
             ))}
           </select>
           <p className="text-xs text-slate-500">
-            紐づけたOPの月間売上（請求金額）で判定し、販管費の「インセンティブ」に計上します。
+            紐づけたOPの月間売上（請求金額）で判定し、原価（外注費）の「インセンティブ」に計上します。
           </p>
         </div>
       </div>
@@ -245,7 +245,7 @@ export function MembersClient({
     <div className="flex flex-col gap-4">
       <div className="flex items-center justify-between">
         <p className="text-xs text-slate-500">
-          ここで登録した人件費は、月次PLの「原価（労務費・外注費）」「役員報酬」「給料手当」「法定福利費」「インセンティブ」に自動で反映されます。
+          ここで登録した人件費は、月次PLの「原価（労務費・外注費・インセンティブ）」「役員報酬」「給料手当」「法定福利費」に自動で反映されます。
         </p>
         <button
           type="button"
