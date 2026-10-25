@@ -6,7 +6,7 @@ import { SECTION_LABELS, monthLabel, formatYen } from "@/lib/accounting";
 import type { PlSection } from "@/types/database";
 import { savePlan } from "../actions";
 
-export type EditorRow = { section: PlSection; label: string; values: string[]; fixed: boolean };
+export type EditorRow = { section: PlSection; label: string; values: string[]; auto: string[] | null; fixed: boolean };
 
 const SECTIONS: PlSection[] = ["sales", "labor", "outsource", "sga"];
 
@@ -46,11 +46,16 @@ export function PlanEditor({
     update(idx, { values: Array(12).fill(first) });
   }
 
+  function resetToAuto(idx: number) {
+    const auto = rows[idx].auto;
+    if (auto) update(idx, { values: [...auto] });
+  }
+
   function addRow(section: PlSection) {
     setRows((prev) => {
       const lastIdx = prev.map((r) => r.section).lastIndexOf(section);
       const next = [...prev];
-      next.splice(lastIdx + 1, 0, { section, label: "", values: Array(12).fill("0"), fixed: false });
+      next.splice(lastIdx + 1, 0, { section, label: "", values: Array(12).fill("0"), auto: null, fixed: false });
       return next;
     });
     setDirty(true);
@@ -69,6 +74,7 @@ export function PlanEditor({
           section: r.section,
           label: r.label,
           values: r.values.map((v) => Number(v) || 0),
+          auto: r.auto ? r.auto.map((v) => Number(v) || 0) : null,
         }))
       );
       if (result?.error) {
@@ -87,7 +93,9 @@ export function PlanEditor({
     <div className="flex flex-col gap-4">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <p className="text-xs text-slate-500">
-          月ごとの計画金額を入力して「保存」してください。売上の行名にOP名を入れると、結果の行と同じ行に並びます。
+          メンバー人件費・経費・取引先請求の登録内容は、計画に<span className="mx-1 rounded bg-sky-100 px-1 text-sky-700">自動で反映</span>されます（青い欄）。
+          金額を書き換えた月だけが手入力として保存されます（0円には変更できないので、不要な登録は削除してください）。
+          売上は手入力です。行名にOP名を入れると、結果の行と同じ行に並び、そのOPのインセンティブの計画計算にも使われます。
         </p>
         <div className="flex items-center gap-3">
           {message && (
@@ -138,7 +146,12 @@ export function PlanEditor({
                   <tr key={idx}>
                     <td className="sticky left-0 z-10 bg-white px-2 py-1">
                       {r.fixed ? (
-                        <span className="text-slate-700">{r.label}</span>
+                        <span className="text-slate-700">
+                          {r.label}
+                          {r.auto && (
+                            <span className="ml-1.5 rounded bg-sky-100 px-1 text-[10px] text-sky-700">自動</span>
+                          )}
+                        </span>
                       ) : (
                         <input
                           list={listId}
@@ -157,7 +170,11 @@ export function PlanEditor({
                           step={1}
                           value={v}
                           onChange={(e) => updateValue(idx, m, e.target.value)}
-                          className={inputClass}
+                          className={`${inputClass} ${
+                            r.auto && Number(v) === Number(r.auto[m]) && Number(v) !== 0
+                              ? "border-sky-300 bg-sky-50"
+                              : ""
+                          }`}
                         />
                       </td>
                     ))}
@@ -165,6 +182,16 @@ export function PlanEditor({
                       {formatYen(r.values.reduce((s, v) => s + (Number(v) || 0), 0))}
                     </td>
                     <td className="whitespace-nowrap px-1 py-1 text-right">
+                      {r.auto && (
+                        <button
+                          type="button"
+                          onClick={() => resetToAuto(idx)}
+                          className="mr-2 text-[11px] text-sky-700 hover:underline"
+                          title="手入力をやめて、登録内容からの自動値に戻す"
+                        >
+                          自動に戻す
+                        </button>
+                      )}
                       <button
                         type="button"
                         onClick={() => fillAll(idx)}

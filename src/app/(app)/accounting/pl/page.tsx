@@ -2,7 +2,14 @@ import { createClient } from "@/lib/supabase/server";
 import { requireAdmin } from "@/lib/auth";
 import { fetchAllRows } from "@/lib/supabase/fetchAll";
 import { monthlyBilledByStaff, type OpConfirmedRecord, type SalesAcquisition } from "@/lib/sales";
-import { buildActualInput, fiscalMonths, fiscalRange, planEntriesToInput } from "@/lib/accounting";
+import {
+  buildActualInput,
+  buildAutoPlan,
+  fiscalMonths,
+  fiscalRange,
+  planSalesByStaff,
+  resolvePlan,
+} from "@/lib/accounting";
 import type { Expense, Member, PlPlanEntry, VendorInvoice } from "@/types/database";
 import { FiscalYearNav } from "../FiscalYearNav";
 import { resolveFiscalYear } from "../fy";
@@ -64,15 +71,23 @@ export default async function PlPage({
   });
   const staffNames = new Map((staff ?? []).map((s) => [s.id as string, s.name as string]));
 
-  const actual = buildActualInput({
+  const registered = {
     months,
     members: (members as Member[]) ?? [],
     expenses: (expenses as Expense[]) ?? [],
     vendorInvoices: (vendorInvoices as (VendorInvoice & { client: { name: string } | null })[]) ?? [],
-    salesByStaff,
     staffNames,
+  };
+  const actual = buildActualInput({ ...registered, salesByStaff });
+
+  // 計画：登録内容（メンバー・経費・取引先請求）から自動計算し、計画入力の手入力で上書き
+  const planEntryList = (planEntries as PlPlanEntry[]) ?? [];
+  const staffIdByName = new Map((staff ?? []).map((s) => [s.name as string, s.id as string]));
+  const autoPlan = buildAutoPlan({
+    ...registered,
+    salesByStaff: planSalesByStaff(planEntryList, months, staffIdByName),
   });
-  const plan = planEntriesToInput((planEntries as PlPlanEntry[]) ?? [], months);
+  const plan = resolvePlan(planEntryList, months, autoPlan).input;
 
   return (
     <div className="flex flex-col gap-4">

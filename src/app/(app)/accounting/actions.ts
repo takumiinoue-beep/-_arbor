@@ -203,7 +203,9 @@ export async function deleteMember(id: string): Promise<ActionResult> {
 
 // ---------- 計画 ----------
 
-export type PlanRowInput = { section: PlSection; label: string; values: number[] };
+// auto: 登録内容から自動計算された値（無い行は null）。自動値と同じ月・0円の月は保存せず、
+// 手入力で上書きした月だけを保存する（登録内容が変われば自動値が追従する）。
+export type PlanRowInput = { section: PlSection; label: string; values: number[]; auto: number[] | null };
 
 export async function savePlan(fy: number, rows: PlanRowInput[]): Promise<ActionResult> {
   await requireAdmin();
@@ -227,11 +229,13 @@ export async function savePlan(fy: number, rows: PlanRowInput[]): Promise<Action
     }
     order += 1;
     row.values.forEach((value, i) => {
+      const amount = Math.round(value);
+      if (row.auto && (amount === 0 || amount === Math.round(row.auto[i] ?? 0))) return;
       entries.push({
         plan_month: `${months[i]}-01`,
         section: row.section,
         line_label: label,
-        amount: Math.round(value),
+        amount,
         sort_order: order,
       });
     });

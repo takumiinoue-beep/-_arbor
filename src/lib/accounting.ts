@@ -111,33 +111,86 @@ class LineBook {
   }
 }
 
-export function planEntriesToInput(entries: PlPlanEntry[], months: string[]): PlInput {
-  const input = emptyPlInput();
-  const orders = new Map<string, number>();
-  const lineMap = new Map<string, PlLine>();
+const SECTIONS: PlSection[] = ["sales", "labor", "outsource", "sga"];
+
+export function planKey(section: PlSection, label: string): string {
+  return `${section}\u0000${label}`;
+}
+
+// 計画の売上（手入力のみ）を「OP×月」にする。計画の行名がOP名と一致するものが対象。
+// 計画上のインセンティブを自動計算するために使う。
+export function planSalesByStaff(
+  entries: PlPlanEntry[],
+  months: string[],
+  staffIdByName: Map<string, string>
+): Map<string, Map<string, number>> {
+  const result = new Map<string, Map<string, number>>();
+  for (const e of entries) {
+    if (e.section !== "sales" || Number(e.amount) === 0) continue;
+    const staffId = staffIdByName.get(e.line_label);
+    const month = e.plan_month.slice(0, 7);
+    if (!staffId || !months.includes(month)) continue;
+    const byMonth = result.get(staffId) ?? new Map<string, number>();
+    byMonth.set(month, (byMonth.get(month) ?? 0) + Number(e.amount));
+    result.set(staffId, byMonth);
+  }
+  return result;
+}
+
+// 計画の自動値：メンバー人件費・経費・取引先請求の登録内容から作る（売上は含めない）
+export function buildAutoPlan(args: Parameters<typeof buildActualInput>[0]): PlInput {
+  const input = buildActualInput(args);
+  return { ...input, sales: [] };
+}
+
+// 計画 ＝ 自動値（登録内容）に、計画入力で手入力した金額（0以外）を上書きしたもの。
+// autoMap は行ごとの自動値（計画入力画面で「自動」表示・上書き判定に使う）。
+export function resolvePlan(
+  entries: PlPlanEntry[],
+  months: string[],
+  auto: PlInput
+): { input: PlInput; autoMap: Map<string, number[]> } {
+  type Override = { section: PlSection; label: string; values: (number | null)[]; order: number };
+  const overrides = new Map<string, Override>();
 
   for (const e of entries) {
     const idx = months.indexOf(e.plan_month.slice(0, 7));
     if (idx < 0) continue;
-    const key = `${e.section}\u0000${e.line_label}`;
-    let line = lineMap.get(key);
-    if (!line) {
-      line = { label: e.line_label, values: zeros() };
-      lineMap.set(key, line);
-      orders.set(key, e.sort_order);
-      input[e.section].push(line);
+    const key = planKey(e.section, e.line_label);
+    let o = overrides.get(key);
+    if (!o) {
+      o = { section: e.section, label: e.line_label, values: Array<number | null>(12).fill(null), order: e.sort_order };
+      overrides.set(key, o);
     }
-    line.values[idx] += Number(e.amount);
-    if (e.sort_order < (orders.get(key) ?? 0)) orders.set(key, e.sort_order);
+    const amount = Number(e.amount);
+    if (amount !== 0) o.values[idx] = amount;
+    o.order = Math.min(o.order, e.sort_order);
   }
 
-  for (const section of Object.keys(input) as PlSection[]) {
-    input[section].sort(
-      (a, b) =>
-        (orders.get(`${section}\u0000${a.label}`) ?? 0) - (orders.get(`${section}\u0000${b.label}`) ?? 0)
-    );
+  const autoMap = new Map<string, number[]>();
+  const input = emptyPlInput();
+
+  for (const section of SECTIONS) {
+    for (const l of auto[section]) autoMap.set(planKey(section, l.label), l.values);
+
+    const labels = [...overrides.values()]
+      .filter((o) => o.section === section)
+      .sort((a, b) => a.order - b.order)
+      .map((o) => o.label);
+    for (const l of auto[section]) if (!labels.includes(l.label)) labels.push(l.label);
+
+    for (const label of labels) {
+      const key = planKey(section, label);
+      const o = overrides.get(key);
+      const a = autoMap.get(key);
+      input[section].push({
+        label,
+        values: Array.from({ length: 12 }, (_, i) => o?.values[i] ?? a?.[i] ?? 0),
+      });
+    }
   }
-  return input;
+
+  return { input, autoMap };
 }
 
 // 実績（結果）：売上・メンバー人件費・経費・取引先請求から組み立てる

@@ -1,6 +1,14 @@
 import { createClient } from "@/lib/supabase/server";
-import { fiscalMonths, fiscalRange, planEntriesToInput, SGA_ACCOUNTS } from "@/lib/accounting";
-import type { Member, PlPlanEntry, PlSection } from "@/types/database";
+import {
+  buildAutoPlan,
+  fiscalMonths,
+  fiscalRange,
+  planKey,
+  planSalesByStaff,
+  resolvePlan,
+  SGA_ACCOUNTS,
+} from "@/lib/accounting";
+import type { Expense, Member, PlPlanEntry, PlSection, VendorInvoice } from "@/types/database";
 import { FiscalYearNav } from "../FiscalYearNav";
 import { resolveFiscalYear } from "../fy";
 import { PlanEditor, type EditorRow } from "./PlanEditor";
@@ -15,31 +23,53 @@ export default async function PlanPage({
   const { from, toExclusive } = fiscalRange(fy);
   const supabase = await createClient();
 
-  const [{ data: planEntries }, { data: members }, { data: staff }] = await Promise.all([
-    supabase.from("pl_plan_entries").select("*").gte("plan_month", from).lt("plan_month", toExclusive),
-    supabase.from("members").select("name, kind"),
-    supabase.from("profiles").select("name").order("name"),
-  ]);
+  const [{ data: planEntries }, { data: members }, { data: expenses }, { data: vendorInvoices }, { data: staff }] =
+    await Promise.all([
+      supabase.from("pl_plan_entries").select("*").gte("plan_month", from).lt("plan_month", toExclusive),
+      supabase.from("members").select("*"),
+      supabase.from("expenses").select("*").gte("expense_month", from).lt("expense_month", toExclusive),
+      supabase
+        .from("vendor_invoices")
+        .select("*, client:clients(name)")
+        .gte("invoice_date", from)
+        .lt("invoice_date", toExclusive),
+      supabase.from("profiles").select("id, name").order("name"),
+    ]);
 
-  const input = planEntriesToInput((planEntries as PlPlanEntry[]) ?? [], months);
+  const entries = (planEntries as PlPlanEntry[]) ?? [];
+  const staffIdByName = new Map((staff ?? []).map((s) => [s.name as string, s.id as string]));
+
+  // 登録内容（メンバー・経費・取引先請求）から計画の自動値を作り、手入力の上書きと合成する
+  const auto = buildAutoPlan({
+    months,
+    members: (members as Member[]) ?? [],
+    expenses: (expenses as Expense[]) ?? [],
+    vendorInvoices: (vendorInvoices as (VendorInvoice & { client: { name: string } | null })[]) ?? [],
+    salesByStaff: planSalesByStaff(entries, months, staffIdByName),
+    staffNames: new Map((staff ?? []).map((s) => [s.id as string, s.name as string])),
+  });
+  const { input, autoMap } = resolvePlan(entries, months, auto);
+
+  const toRow = (section: PlSection, label: string, values: number[], fixed: boolean): EditorRow => {
+    const a = autoMap.get(planKey(section, label));
+    return {
+      section,
+      label,
+      values: values.map(String),
+      auto: a ? a.map(String) : null,
+      fixed: fixed || !!a,
+    };
+  };
 
   const toRows = (section: PlSection): EditorRow[] =>
-    input[section].map((l) => ({ section, label: l.label, values: l.values.map(String), fixed: false }));
+    input[section].map((l) => toRow(section, l.label, l.values, false));
 
-  // 販管費は科目を固定で全て並べ、登録済みの値を入れる
-  const sgaRows: EditorRow[] = SGA_ACCOUNTS.map((account) => {
-    const found = input.sga.find((l) => l.label === account);
-    return {
-      section: "sga" as const,
-      label: account,
-      values: (found?.values ?? Array(12).fill(0)).map(String),
-      fixed: true,
-    };
-  });
+  // 販管費は科目を固定で全て並べる
+  const sgaRows: EditorRow[] = SGA_ACCOUNTS.map((account) =>
+    toRow("sga", account, input.sga.find((l) => l.label === account)?.values ?? Array(12).fill(0), true)
+  );
   for (const l of input.sga) {
-    if (!(SGA_ACCOUNTS as readonly string[]).includes(l.label)) {
-      sgaRows.push({ section: "sga", label: l.label, values: l.values.map(String), fixed: false });
-    }
+    if (!(SGA_ACCOUNTS as readonly string[]).includes(l.label)) sgaRows.push(toRow("sga", l.label, l.values, false));
   }
 
   const suggestions = {
