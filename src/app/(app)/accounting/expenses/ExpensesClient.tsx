@@ -1,62 +1,59 @@
 "use client";
 
-import { useActionState, useEffect, useRef, useState, useTransition } from "react";
+import { useActionState, useCallback, useEffect, useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
+import Modal from "@/components/common/Modal";
 import { ACCOUNT_OPTIONS, expensePeriodLabel, formatYen, isExpenseActive } from "@/lib/accounting";
 import type { Expense } from "@/types/database";
-import { createExpense, deleteExpense } from "../actions";
+import { deleteExpense, saveExpense } from "../actions";
 
 type PeriodType = "single" | "range" | "ongoing";
 
-export function ExpensesClient({
-  expenses,
-  months,
+const field = "rounded-md border border-slate-300 px-3 py-1.5 text-sm focus:border-slate-500 focus:outline-none";
+const label = "text-xs font-medium text-slate-500";
+
+function periodTypeOf(e: Expense): PeriodType {
+  if (e.ongoing) return "ongoing";
+  if (e.end_month && e.end_month.slice(0, 7) !== e.expense_month.slice(0, 7)) return "range";
+  return "single";
+}
+
+// 新規登録と編集で共通の入力フォーム（expense があれば編集）
+function ExpenseForm({
+  expense,
   defaultMonth,
+  onDone,
+  layout,
 }: {
-  expenses: Expense[];
-  months: string[];
+  expense: Expense | null;
   defaultMonth: string;
+  onDone?: () => void;
+  layout: "inline" | "stacked";
 }) {
-  const [state, formAction, pending] = useActionState(createExpense, null);
-  const [deleting, startTransition] = useTransition();
+  const [state, formAction, pending] = useActionState(saveExpense, null);
   const wasPending = useRef(false);
   const router = useRouter();
-  const [month, setMonth] = useState(defaultMonth);
-  const [periodType, setPeriodType] = useState<PeriodType>("single");
-  const [endMonth, setEndMonth] = useState("");
-  const [amount, setAmount] = useState("");
-  const [description, setDescription] = useState("");
+  const [month, setMonth] = useState(expense ? expense.expense_month.slice(0, 7) : defaultMonth);
+  const [periodType, setPeriodType] = useState<PeriodType>(expense ? periodTypeOf(expense) : "single");
+  const [endMonth, setEndMonth] = useState(expense?.end_month ? expense.end_month.slice(0, 7) : "");
+  const [account, setAccount] = useState(expense?.account ?? "");
+  const [amount, setAmount] = useState(expense ? String(expense.amount) : "");
+  const [description, setDescription] = useState(expense?.description ?? "");
 
   useEffect(() => {
     if (wasPending.current && !pending && !state?.error) {
-      setAmount("");
-      setDescription("");
-      setEndMonth("");
-      setPeriodType("single");
+      onDone?.();
       router.refresh();
     }
     wasPending.current = pending;
-  }, [pending, state, router]);
+  }, [pending, state, router, onDone]);
 
-  function handleDelete(e: Expense) {
-    if (!confirm(`${expensePeriodLabel(e)}「${e.account}」${formatYen(Number(e.amount))}を削除しますか？`)) return;
-    startTransition(async () => {
-      const result = await deleteExpense(e.id);
-      if (result?.error) alert(`削除できませんでした: ${result.error}`);
-      else router.refresh();
-    });
-  }
-
-  // 事業年度内で計上される月数と合計
-  const monthsInYear = (e: Expense) => months.filter((m) => isExpenseActive(e, m)).length;
-  const total = expenses.reduce((sum, e) => sum + Number(e.amount) * monthsInYear(e), 0);
-
-  const field = "rounded-md border border-slate-300 px-3 py-1.5 text-sm focus:border-slate-500 focus:outline-none";
-  const label = "text-xs font-medium text-slate-500";
+  const wrap = layout === "inline" ? "flex flex-wrap items-end gap-3" : "grid grid-cols-2 gap-4";
 
   return (
-    <div className="flex flex-col gap-4">
-      <form action={formAction} className="flex flex-wrap items-end gap-3 rounded-lg border border-slate-200 bg-white p-4">
+    <form action={formAction} className={layout === "inline" ? "rounded-lg border border-slate-200 bg-white p-4" : ""}>
+      {expense && <input type="hidden" name="id" value={expense.id} />}
+      <div className={wrap}>
         <div className="flex flex-col gap-1">
           <label className={label}>期間</label>
           <select
@@ -90,7 +87,7 @@ export function ExpensesClient({
         )}
         <div className="flex flex-col gap-1">
           <label className={label}>勘定科目</label>
-          <select name="account" required defaultValue="" className={field}>
+          <select name="account" required value={account} onChange={(e) => setAccount(e.target.value)} className={field}>
             <option value="" disabled>
               選択
             </option>
@@ -111,22 +108,79 @@ export function ExpensesClient({
             required
             value={amount}
             onChange={(e) => setAmount(e.target.value)}
-            className={`${field} w-36`}
+            className={`${field} ${layout === "inline" ? "w-36" : ""}`}
           />
         </div>
-        <div className="flex flex-col gap-1">
+        <div className={`flex flex-col gap-1 ${layout === "stacked" ? "col-span-2" : ""}`}>
           <label className={label}>内容</label>
-          <input name="description" value={description} onChange={(e) => setDescription(e.target.value)} className={`${field} w-56`} />
+          <input
+            name="description"
+            value={description}
+            onChange={(e) => setDescription(e.target.value)}
+            className={`${field} ${layout === "inline" ? "w-56" : ""}`}
+          />
         </div>
-        <button
-          type="submit"
-          disabled={pending}
-          className="rounded-md bg-slate-900 px-4 py-1.5 text-sm font-medium text-white hover:bg-slate-700 disabled:opacity-50"
-        >
-          {pending ? "登録中..." : "登録する"}
-        </button>
-        {state?.error && <p className="w-full rounded-md bg-red-50 px-3 py-2 text-sm text-red-600">{state.error}</p>}
-      </form>
+        <div className={`flex items-end gap-3 ${layout === "stacked" ? "col-span-2" : ""}`}>
+          <button
+            type="submit"
+            disabled={pending}
+            className="rounded-md bg-slate-900 px-4 py-1.5 text-sm font-medium text-white hover:bg-slate-700 disabled:opacity-50"
+          >
+            {pending ? "保存中..." : expense ? "更新する" : "登録する"}
+          </button>
+          {expense && onDone && (
+            <button
+              type="button"
+              onClick={onDone}
+              className="rounded-md border border-slate-200 px-4 py-1.5 text-sm text-slate-600 hover:bg-slate-100"
+            >
+              キャンセル
+            </button>
+          )}
+        </div>
+        {state?.error && (
+          <p className={`rounded-md bg-red-50 px-3 py-2 text-sm text-red-600 ${layout === "inline" ? "w-full" : "col-span-2"}`}>
+            {state.error}
+          </p>
+        )}
+      </div>
+    </form>
+  );
+}
+
+export function ExpensesClient({
+  expenses,
+  months,
+  defaultMonth,
+}: {
+  expenses: Expense[];
+  months: string[];
+  defaultMonth: string;
+}) {
+  const [deleting, startTransition] = useTransition();
+  const [editing, setEditing] = useState<Expense | null>(null);
+  // 登録成功のたびに登録フォームを作り直して入力を空にする
+  const [createKey, setCreateKey] = useState(0);
+  const resetCreate = useCallback(() => setCreateKey((k) => k + 1), []);
+  const closeEdit = useCallback(() => setEditing(null), []);
+  const router = useRouter();
+
+  function handleDelete(e: Expense) {
+    if (!confirm(`${expensePeriodLabel(e)}「${e.account}」${formatYen(Number(e.amount))}を削除しますか？`)) return;
+    startTransition(async () => {
+      const result = await deleteExpense(e.id);
+      if (result?.error) alert(`削除できませんでした: ${result.error}`);
+      else router.refresh();
+    });
+  }
+
+  // 事業年度内で計上される月数と合計
+  const monthsInYear = (e: Expense) => months.filter((m) => isExpenseActive(e, m)).length;
+  const total = expenses.reduce((sum, e) => sum + Number(e.amount) * monthsInYear(e), 0);
+
+  return (
+    <div className="flex flex-col gap-4">
+      <ExpenseForm key={createKey} expense={null} defaultMonth={defaultMonth} layout="inline" onDone={resetCreate} />
 
       <p className="text-xs text-slate-500">
         期間を指定した経費は、開始月〜終了月の毎月に同じ月額がPLの計画・結果へ反映されます。「継続」は削除するまで毎月計上されます。
@@ -158,14 +212,19 @@ export function ExpensesClient({
                   </td>
                   <td className="px-3 py-2 text-slate-500">{e.description ?? ""}</td>
                   <td className="px-3 py-2">
-                    <button
-                      type="button"
-                      disabled={deleting}
-                      onClick={() => handleDelete(e)}
-                      className="text-xs text-red-600 hover:underline disabled:opacity-50"
-                    >
-                      削除
-                    </button>
+                    <div className="flex gap-3">
+                      <button type="button" onClick={() => setEditing(e)} className="text-xs text-slate-600 hover:underline">
+                        編集
+                      </button>
+                      <button
+                        type="button"
+                        disabled={deleting}
+                        onClick={() => handleDelete(e)}
+                        className="text-xs text-red-600 hover:underline disabled:opacity-50"
+                      >
+                        削除
+                      </button>
+                    </div>
                   </td>
                 </tr>
               );
@@ -191,6 +250,18 @@ export function ExpensesClient({
           )}
         </table>
       </div>
+
+      <Modal isOpen={editing !== null} onClose={closeEdit} title="経費の編集" size="lg">
+        {editing && (
+          <ExpenseForm
+            key={editing.id}
+            expense={editing}
+            defaultMonth={defaultMonth}
+            onDone={closeEdit}
+            layout="stacked"
+          />
+        )}
+      </Modal>
     </div>
   );
 }

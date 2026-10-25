@@ -36,8 +36,11 @@ function parseAmount(raw: FormDataEntryValue | null, label: string): { ok: true;
 
 // ---------- 経費 ----------
 
-export async function createExpense(_prev: ActionResult, formData: FormData): Promise<ActionResult> {
+// 新規登録・編集の両方に対応（id があれば更新）
+export async function saveExpense(_prev: ActionResult, formData: FormData): Promise<ActionResult> {
   const profile = await requireAdmin();
+
+  const id = String(formData.get("id") ?? "").trim();
 
   const month = monthToDate(String(formData.get("expense_month") ?? ""));
   const periodType = String(formData.get("period_type") ?? "single");
@@ -56,17 +59,20 @@ export async function createExpense(_prev: ActionResult, formData: FormData): Pr
   if (!ACCOUNT_OPTIONS.includes(account)) return { error: "勘定科目を選択してください。" };
   if (!amount.ok) return { error: amount.error };
 
-  const supabase = await createClient();
-  const { error } = await supabase.from("expenses").insert({
+  const value = {
     expense_month: month,
     end_month: endMonth,
     ongoing: periodType === "ongoing",
     account,
     amount: amount.value,
     description: description || null,
-    created_by: profile.id,
-  });
-  if (error) return { error: `登録に失敗しました: ${error.message}` };
+  };
+
+  const supabase = await createClient();
+  const { error } = id
+    ? await supabase.from("expenses").update(value).eq("id", id)
+    : await supabase.from("expenses").insert({ ...value, created_by: profile.id });
+  if (error) return { error: `${id ? "更新" : "登録"}に失敗しました: ${error.message}` };
 
   revalidateAccounting();
   return null;
