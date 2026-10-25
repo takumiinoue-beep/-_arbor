@@ -25,12 +25,16 @@ export const SGA_ACCOUNTS = [
   "雑費",
   "減価償却費",
   "長期前払費用償却",
-  "インセンティブ",
 ] as const;
 
 // 経費・取引先請求で選べる、原価（外注費）側に計上する科目
 export const COGS_OUTSOURCE_ACCOUNT = "原価（外注費）";
-export const ACCOUNT_OPTIONS: string[] = [...SGA_ACCOUNTS, COGS_OUTSOURCE_ACCOUNT];
+// インセンティブは外注費にまとめて計上する（メンバーの設定からの自動計算も、経費・請求で選んだ場合も）
+export const INCENTIVE_ACCOUNT = "インセンティブ";
+export const ACCOUNT_OPTIONS: string[] = [...SGA_ACCOUNTS, COGS_OUTSOURCE_ACCOUNT, INCENTIVE_ACCOUNT];
+
+// 原価（外注費）側の行名にする科目か
+const isOutsourceAccount = (account: string) => account === COGS_OUTSOURCE_ACCOUNT || account === INCENTIVE_ACCOUNT;
 
 export const MEMBER_KINDS: { value: MemberKind; label: string }[] = [
   { value: "labor_existing", label: "直雇用（既存）" },
@@ -301,8 +305,8 @@ export function buildActualInput(args: {
 
       if (member.profile_id && member.incentive_tiers?.length) {
         const memberSales = salesByStaff.get(member.profile_id)?.get(month) ?? 0;
-        sga.add(
-          "インセンティブ",
+        outsource.add(
+          INCENTIVE_ACCOUNT,
           idx,
           incentiveFor(member.incentive_tiers, memberSales),
           `${member.name}（売上${formatShortYen(memberSales)}の段階）`
@@ -320,8 +324,11 @@ export function buildActualInput(args: {
           ? `（${expensePeriodLabel(e)}）`
           : ""
       }`;
-      if (e.account === COGS_OUTSOURCE_ACCOUNT) outsource.add("外注（経費）", idx, Number(e.amount), text);
-      else sga.add(e.account, idx, Number(e.amount), text);
+      if (isOutsourceAccount(e.account)) {
+        outsource.add(e.account === INCENTIVE_ACCOUNT ? INCENTIVE_ACCOUNT : "外注（経費）", idx, Number(e.amount), text);
+      } else {
+        sga.add(e.account, idx, Number(e.amount), text);
+      }
     });
   }
 
@@ -330,8 +337,9 @@ export function buildActualInput(args: {
     const idx = monthIndex(v.invoice_date.slice(0, 7));
     const vendor = v.vendor_name || v.client?.name || "取引先";
     const text = `取引先請求：${vendor}${v.description ? `／${v.description}` : ""}（${v.invoice_date}）`;
-    if (v.account === COGS_OUTSOURCE_ACCOUNT) {
-      outsource.add(v.vendor_name || v.client?.name || "外注（取引先請求）", idx, Number(v.subtotal), text);
+    if (isOutsourceAccount(v.account)) {
+      const label = v.account === INCENTIVE_ACCOUNT ? INCENTIVE_ACCOUNT : v.vendor_name || v.client?.name || "外注（取引先請求）";
+      outsource.add(label, idx, Number(v.subtotal), text);
     } else {
       sga.add(v.account, idx, Number(v.subtotal), text);
     }
