@@ -20,7 +20,7 @@ export default async function DashboardPage() {
       requireProfile(),
       supabase
         .from("projects")
-        .select("id, name, start_date, end_date, unit_price, price_rates(id, position, employee_min, employee_max, unit_price)"),
+        .select("id, name, start_date, end_date, status, unit_price, price_rates(id, position, employee_min, employee_max, unit_price)"),
       supabase.from("profiles").select("id, name").order("name"),
       fetchAllRows<AcquisitionRow>((from, to) =>
         supabase

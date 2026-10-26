@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
 import { requireAdmin, requireProfile } from "@/lib/auth";
+import { needsMonthlyCopy } from "@/lib/projectMonths";
 
 type FormState = { error: string } | null;
 
@@ -82,6 +83,72 @@ function parseAcquisitionRows(
   return { ok: true, value: parsed };
 }
 
+type SupabaseClient = Awaited<ReturnType<typeof createClient>>;
+
+// 計上月の案件がまだ無い（前の月の案件しか無い）行は、前の月の案件を引き継いで今月分を自動で作り、そちらに付け替える。
+// 料金表のある案件は、同じ役職・同じ従業員数の区分の行へ移す。
+async function moveRowsToMonthlyProjects(
+  supabase: SupabaseClient,
+  rows: AcquisitionRowInput[],
+  acquiredDate: string
+): Promise<string | null> {
+  const ids = Array.from(new Set(rows.map((r) => r.project_id)));
+  const { data: sources } = await supabase
+    .from("projects")
+    .select("id, start_date, end_date, status")
+    .in("id", ids);
+  const sourceById = new Map((sources ?? []).map((p) => [p.id as string, p]));
+
+  const carried = new Map<string, string>(); // "元の案件ID:YYYY-MM" -> 新しい案件ID
+  const rateMaps = new Map<string, { old: RateLite[]; next: RateLite[] }>();
+
+  for (const row of rows) {
+    const source = sourceById.get(row.project_id);
+    const month = (row.target_month ?? `${acquiredDate.slice(0, 7)}-01`).slice(0, 7);
+    if (!source || !needsMonthlyCopy(source, month)) continue;
+
+    const key = `${source.id}:${month}`;
+    let newId = carried.get(key);
+    if (!newId) {
+      const { data, error } = await supabase.rpc("carry_over_project", {
+        p_source_id: source.id,
+        p_month: `${month}-01`,
+      });
+      if (error) return `${month}の案件の自動作成に失敗しました: ${error.message}`;
+      newId = data as string;
+      carried.set(key, newId);
+    }
+
+    if (row.rate_id) {
+      let maps = rateMaps.get(key);
+      if (!maps) {
+        const [{ data: oldRates }, { data: nextRates }] = await Promise.all([
+          supabase.from("price_rates").select("id, position, employee_min, employee_max").eq("project_id", source.id),
+          supabase.from("price_rates").select("id, position, employee_min, employee_max").eq("project_id", newId),
+        ]);
+        maps = { old: (oldRates as RateLite[]) ?? [], next: (nextRates as RateLite[]) ?? [] };
+        rateMaps.set(key, maps);
+      }
+      const oldRate = maps.old.find((r) => r.id === row.rate_id);
+      const sameBand = (r: RateLite) =>
+        !!oldRate && r.position === oldRate.position && r.employee_min === oldRate.employee_min && r.employee_max === oldRate.employee_max;
+      const inRange = (r: RateLite) =>
+        !!oldRate &&
+        r.position === oldRate.position &&
+        row.employee_count !== null &&
+        row.employee_count >= r.employee_min &&
+        (r.employee_max === null || row.employee_count <= r.employee_max);
+      const next = maps.next.find(sameBand) ?? maps.next.find(inRange);
+      if (!next) continue; // 対応する行が無ければ元の案件のまま登録する
+      row.rate_id = next.id;
+    }
+    row.project_id = newId;
+  }
+  return null;
+}
+
+type RateLite = { id: string; position: string; employee_min: number; employee_max: number | null };
+
 export async function createAcquisition(
   _prevState: FormState,
   formData: FormData
@@ -98,6 +165,9 @@ export async function createAcquisition(
   if (!parsed.ok) return { error: parsed.error };
 
   const supabase = await createClient();
+  const moveError = await moveRowsToMonthlyProjects(supabase, parsed.value, acquiredDate);
+  if (moveError) return { error: moveError };
+
   const { error } = await supabase.rpc("create_acquisitions_batch", {
     p_acquired_date: acquiredDate,
     p_staff_id: null,
@@ -146,4 +216,18 @@ export async function deleteAcquisition(id: string) {
 
   revalidatePath("/dashboard");
   revalidatePath("/projects");
+}
+
+// 進行中の案件を、まとめて指定した月（"YYYY-MM"）へ引き継ぐ
+export async function carryOverProjects(month: string): Promise<{ error: string } | { created: number }> {
+  await requireAdmin();
+  if (!/^\d{4}-\d{2}$/.test(month)) return { error: "月の形式が不正です。" };
+
+  const supabase = await createClient();
+  const { data, error } = await supabase.rpc("carry_over_projects", { p_month: `${month}-01` });
+  if (error) return { error: `引き継ぎに失敗しました: ${error.message}` };
+
+  revalidatePath("/dashboard");
+  revalidatePath("/projects");
+  return { created: Number(data ?? 0) };
 }

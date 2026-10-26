@@ -61,6 +61,7 @@ Supabaseダッシュボードの「SQL Editor」で、`supabase/migrations/` 配
 | [`0021_acquisition_target_month.sql`](supabase/migrations/0021_acquisition_target_month.sql) | 案件獲得に計上月（`target_month`）を追加。来月のアポを今月のうちに登録して、来月のページ・PLに載せられる |
 | [`0022_acquisitions_batch_per_row.sql`](supabase/migrations/0022_acquisitions_batch_per_row.sql) | 案件獲得の登録を、行ごとにOP・計上月を指定できるように（複数OPのまとめ登録） |
 | [`0023_link_acquisitions_to_project.sql`](supabase/migrations/0023_link_acquisitions_to_project.sql) | 新しい月の案件を登録・更新したとき、その月に計上する獲得（来月のアポなど）を同名の前の案件から付け替える（RPC `link_acquisitions_to_project`） |
+| [`0024_carry_over_projects.sql`](supabase/migrations/0024_carry_over_projects.sql) | 続く案件を毎月の案件として自動で作る（`carry_over_project` / `carry_over_projects`）。案件獲得の登録時に計上月の案件が無ければ自動作成。0023を含むので、この1本で動く |
 
 ### 3. 環境変数を設定
 

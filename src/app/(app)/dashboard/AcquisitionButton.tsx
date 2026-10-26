@@ -6,13 +6,14 @@ import Modal from "@/components/common/Modal";
 import type { PriceRate, Profile, Project } from "@/types/database";
 import { formatCurrency } from "@/lib/format";
 import { formatYearMonth } from "@/lib/period";
+import { needsMonthlyCopy } from "@/lib/projectMonths";
 import { createAcquisition } from "./actions";
 
 function toToday(): string {
   return new Date().toISOString().slice(0, 10);
 }
 
-export type AcquisitionProject = Pick<Project, "id" | "name" | "start_date" | "end_date" | "unit_price"> & {
+export type AcquisitionProject = Pick<Project, "id" | "name" | "start_date" | "end_date" | "status" | "unit_price"> & {
   price_rates?: Pick<PriceRate, "id" | "position" | "employee_min" | "employee_max" | "unit_price">[];
 };
 
@@ -304,6 +305,11 @@ export function AcquisitionButton({
                       {resolved.project && (
                         <span className="rounded-full bg-slate-100 px-2 py-0.5 font-medium text-slate-600">
                           {versionLabel(resolved.project)}
+                        </span>
+                      )}
+                      {resolved.project && needsMonthlyCopy(resolved.project, resolved.month) && (
+                        <span className="text-emerald-700">
+                          {formatYearMonth(resolved.month)}の案件を自動で作成して登録します
                         </span>
                       )}
                       {resolved.versions.length > 1 && resolved.project && (
