@@ -4,6 +4,8 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { requireAdmin } from "@/lib/auth";
+import { fetchAllRows } from "@/lib/supabase/fetchAll";
+import { needsMonthlyCopy } from "@/lib/projectMonths";
 import type { ProjectStatus } from "@/types/database";
 
 type FormState = { error: string } | null;
@@ -202,4 +204,113 @@ export async function deleteProject(id: string) {
 
   revalidatePath("/projects");
   revalidatePath("/dashboard");
+}
+
+// ---------- 案件の引き継ぎ（毎月の案件を作る） ----------
+
+export type CarryOverCandidate = {
+  id: string;
+  name: string;
+  staffName: string | null;
+  startMonth: string; // 引き継ぎ元の開始月 "YYYY-MM"
+  appointmentQty: number; // 引き継ぎ先の月に計上する獲得（来月商談など）の件数
+};
+
+// 指定した月に引き継げる案件（案件名ごとに一番新しい案件で、進行中・まだその月の案件が無いもの）。
+// その月に計上する獲得（先に登録された商談）の件数も合わせて返す。
+export async function listCarryOverCandidates(
+  month: string
+): Promise<{ error: string } | { candidates: CarryOverCandidate[] }> {
+  await requireAdmin();
+  if (!/^\d{4}-\d{2}$/.test(month)) return { error: "月の形式が不正です。" };
+
+  const supabase = await createClient();
+
+  const monthStart = `${month}-01`;
+  const next = new Date(Date.UTC(Number(month.slice(0, 4)), Number(month.slice(5, 7)), 1));
+  const nextStart = next.toISOString().slice(0, 10);
+
+  const [{ data: projects, error: projectError }, explicit, implicit] = await Promise.all([
+    supabase
+      .from("projects")
+      .select("id, name, start_date, end_date, status, staff:profiles!projects_staff_id_fkey(name)")
+      .order("start_date", { ascending: false }),
+    fetchAllRows<{ project_id: string; quantity: number }>((a, b) =>
+      supabase.from("acquisitions").select("project_id, quantity").eq("target_month", monthStart).order("id").range(a, b)
+    ),
+    fetchAllRows<{ project_id: string; quantity: number }>((a, b) =>
+      supabase
+        .from("acquisitions")
+        .select("project_id, quantity")
+        .is("target_month", null)
+        .gte("acquired_date", monthStart)
+        .lt("acquired_date", nextStart)
+        .order("id")
+        .range(a, b)
+    ),
+  ]);
+  if (projectError) return { error: projectError.message };
+
+  type P = {
+    id: string;
+    name: string;
+    start_date: string;
+    end_date: string | null;
+    status: ProjectStatus;
+    staff: { name: string } | null;
+  };
+  const all = (projects ?? []) as unknown as P[];
+  const nameById = new Map(all.map((p) => [p.id, p.name]));
+
+  const qtyByName = new Map<string, number>();
+  for (const a of [...explicit, ...implicit]) {
+    const name = nameById.get(a.project_id);
+    if (name) qtyByName.set(name, (qtyByName.get(name) ?? 0) + a.quantity);
+  }
+
+  // 案件名ごとに一番新しい案件（開始日の降順で並んでいる）
+  const latestByName = new Map<string, P>();
+  for (const p of all) if (!latestByName.has(p.name)) latestByName.set(p.name, p);
+
+  const candidates = Array.from(latestByName.values())
+    .filter((p) => needsMonthlyCopy(p, month))
+    .map((p) => ({
+      id: p.id,
+      name: p.name,
+      staffName: p.staff?.name ?? null,
+      startMonth: p.start_date.slice(0, 7),
+      appointmentQty: qtyByName.get(p.name) ?? 0,
+    }))
+    .sort((a, b) => b.appointmentQty - a.appointmentQty || a.name.localeCompare(b.name, "ja"));
+
+  return { candidates };
+}
+
+// 選んだ案件を、指定した月（"YYYY-MM"）の案件として引き継ぐ。
+// その月に計上する獲得（来月商談など）は、新しい案件へ付け替わる。
+export async function carryOverProjects(
+  month: string,
+  projectIds: string[]
+): Promise<{ error: string } | { created: number }> {
+  await requireAdmin();
+  if (!/^\d{4}-\d{2}$/.test(month)) return { error: "月の形式が不正です。" };
+  if (projectIds.length === 0) return { error: "引き継ぐ案件を選択してください。" };
+
+  const supabase = await createClient();
+  let created = 0;
+  for (const id of projectIds) {
+    const { error } = await supabase.rpc("carry_over_project", { p_source_id: id, p_month: `${month}-01` });
+    if (error) {
+      revalidatePath("/projects");
+      revalidatePath("/dashboard");
+      return {
+        error: `引き継ぎに失敗しました（${created}件は作成済み）: ${error.message}`,
+      };
+    }
+    created += 1;
+  }
+
+  revalidatePath("/projects");
+  revalidatePath("/dashboard");
+  return { created };
 }

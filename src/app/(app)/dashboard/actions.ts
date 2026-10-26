@@ -217,17 +217,3 @@ export async function deleteAcquisition(id: string) {
   revalidatePath("/dashboard");
   revalidatePath("/projects");
 }
-
-// 進行中の案件を、まとめて指定した月（"YYYY-MM"）へ引き継ぐ
-export async function carryOverProjects(month: string): Promise<{ error: string } | { created: number }> {
-  await requireAdmin();
-  if (!/^\d{4}-\d{2}$/.test(month)) return { error: "月の形式が不正です。" };
-
-  const supabase = await createClient();
-  const { data, error } = await supabase.rpc("carry_over_projects", { p_month: `${month}-01` });
-  if (error) return { error: `引き継ぎに失敗しました: ${error.message}` };
-
-  revalidatePath("/dashboard");
-  revalidatePath("/projects");
-  return { created: Number(data ?? 0) };
-}
