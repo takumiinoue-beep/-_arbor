@@ -1,4 +1,4 @@
-import { buildAutoPlan, planSalesByStaff, resolvePlan } from "@/lib/accounting";
+import { buildAutoPlan, planSalesByStaff, resolveWithSalesTax } from "@/lib/accounting";
 import { FiscalYearNav } from "../FiscalYearNav";
 import { resolveFiscalYear } from "../fy";
 import { loadAccounting } from "../loadAccounting";
@@ -17,10 +17,10 @@ export default async function PlPage({
     ...registered,
     salesByStaff: planSalesByStaff(planEntries, months, staffIdByName),
   });
-  const plan = resolvePlan(planEntries, months, autoPlan).input;
+  const plan = resolveWithSalesTax(planEntries, months, autoPlan).input;
 
   // 結果：登録内容から自動計算し、結果入力の手入力で上書き
-  const actual = resolvePlan(actualEntries, months, autoActual, "結果入力で手入力した金額").input;
+  const actual = resolveWithSalesTax(actualEntries, months, autoActual, "結果入力で手入力した金額").input;
 
   return (
     <div className="flex flex-col gap-4">

@@ -1,4 +1,4 @@
-import { planKey, resolvePlan, SGA_ACCOUNTS } from "@/lib/accounting";
+import { planKey, resolveWithSalesTax, SGA_ACCOUNTS } from "@/lib/accounting";
 import type { Member, PlSection } from "@/types/database";
 import { FiscalYearNav } from "../FiscalYearNav";
 import { resolveFiscalYear } from "../fy";
@@ -13,7 +13,7 @@ export default async function ActualPage({
   const fy = resolveFiscalYear((await searchParams).fy);
   const { months, registered, staffList, actualEntries, autoActual } = await loadAccounting(fy);
 
-  const { input, autoMap } = resolvePlan(actualEntries, months, autoActual, "結果入力で手入力した金額");
+  const { input, autoMap } = resolveWithSalesTax(actualEntries, months, autoActual, "結果入力で手入力した金額");
 
   const toRow = (section: PlSection, label: string, values: number[], fixed: boolean): EditorRow => {
     const a = autoMap.get(planKey(section, label));

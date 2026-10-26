@@ -6,7 +6,7 @@ import {
   fiscalRange,
   planKey,
   planSalesByStaff,
-  resolvePlan,
+  resolveWithSalesTax,
   SGA_ACCOUNTS,
 } from "@/lib/accounting";
 import type { Expense, Member, PlPlanEntry, PlSection, VendorInvoice } from "@/types/database";
@@ -49,7 +49,7 @@ export default async function PlanPage({
     salesByStaff: planSalesByStaff(entries, months, staffIdByName),
     staffNames: new Map((staff ?? []).map((s) => [s.id as string, s.name as string])),
   });
-  const { input, autoMap } = resolvePlan(entries, months, auto);
+  const { input, autoMap } = resolveWithSalesTax(entries, months, auto);
 
   const toRow = (section: PlSection, label: string, values: number[], fixed: boolean): EditorRow => {
     const a = autoMap.get(planKey(section, label));

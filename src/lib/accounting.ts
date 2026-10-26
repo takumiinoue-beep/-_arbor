@@ -4,6 +4,9 @@ import type { Expense, IncentiveTier, Member, MemberKind, PlPlanEntry, PlSection
 export const FISCAL_START_MONTH = 9;
 // 売上のうち手元に残す割合（PDFの「残す金額（売上の5%）」）
 export const SALES_RETAIN_RATE = 0.05;
+// 租税公課は売上に対してこの割合で自動計上する
+export const SALES_TAX_RATE = 0.05;
+export const TAX_ACCOUNT = "租税公課";
 
 export const SGA_ACCOUNTS = [
   "役員報酬",
@@ -213,6 +216,43 @@ export function resolvePlan(
   }
 
   return { input, autoMap };
+}
+
+// 手入力を反映した売上（月ごとの合計）の SALES_TAX_RATE を、租税公課の自動値に加える。
+// 登録した経費・請求の租税公課があれば、それに上乗せされる。
+function addSalesTax(auto: PlInput, salesTotals: number[]): PlInput {
+  const sga = auto.sga.map((l) => ({ ...l }));
+  let line = sga.find((l) => l.label === TAX_ACCOUNT);
+  if (!line) {
+    line = { label: TAX_ACCOUNT, values: zeros(), details: undefined };
+    sga.push(line);
+  }
+  const values = [...line.values];
+  const details = (line.details ?? Array.from({ length: 12 }, () => [] as PlDetail[])).map((d) => [...d]);
+  const pct = `${Math.round(SALES_TAX_RATE * 1000) / 10}%`;
+  salesTotals.forEach((sales, i) => {
+    const tax = Math.round(sales * SALES_TAX_RATE);
+    if (!tax) return;
+    values[i] += tax;
+    details[i] = [{ text: `売上${formatShortYen(sales)}の${pct}`, amount: tax }, ...details[i]];
+  });
+  line.values = values;
+  line.details = details;
+  return { ...auto, sga };
+}
+
+// resolvePlan に、売上（手入力の上書き後）に対する租税公課の自動計算を加えたもの
+export function resolveWithSalesTax(
+  entries: PlPlanEntry[],
+  months: string[],
+  auto: PlInput,
+  manualText?: string
+): { input: PlInput; autoMap: Map<string, number[]> } {
+  const first = resolvePlan(entries, months, auto, manualText);
+  const salesTotals = Array.from({ length: 12 }, (_, i) =>
+    first.input.sales.reduce((sum, l) => sum + (l.values[i] ?? 0), 0)
+  );
+  return resolvePlan(entries, months, addSalesTax(auto, salesTotals), manualText);
 }
 
 // その経費が指定月に計上されるか（単月／期間指定／継続）
