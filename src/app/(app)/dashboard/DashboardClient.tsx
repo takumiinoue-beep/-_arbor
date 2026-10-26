@@ -54,6 +54,7 @@ type TopGroup = {
   mids: MidRow[];
   acquiredQty: number;
   acquiredAmount: number;
+  effectiveQty: number;
   billedAmount: number;
 };
 
@@ -215,6 +216,7 @@ function groupRows(rows: SalesRow[], view: View): TopGroup[] {
       mids: midRows,
       acquiredQty: sum(midRows, (m) => m.acquiredQty),
       acquiredAmount: sum(midRows, (m) => m.acquiredAmount),
+      effectiveQty: sum(midRows, (m) => m.effectiveQty),
       billedAmount: sum(midRows, (m) => m.billedAmount),
     };
   }).sort((a, b) => cmp(a.label, b.label));
@@ -288,10 +290,11 @@ export function DashboardClient({
         (acc, r) => {
           acc.acquiredQty += r.acquiredQty;
           acc.acquiredAmount += r.acquiredAmount;
+          acc.effectiveQty += r.effectiveQty;
           acc.billedAmount += r.billedAmount;
           return acc;
         },
-        { acquiredQty: 0, acquiredAmount: 0, billedAmount: 0 }
+        { acquiredQty: 0, acquiredAmount: 0, effectiveQty: 0, billedAmount: 0 }
       ),
     [salesRows]
   );
@@ -369,8 +372,8 @@ export function DashboardClient({
           <tbody className="divide-y divide-slate-100">
             {groups.map((group) => (
               <Fragment key={group.key}>
-                <tr className="bg-slate-100">
-                  <td colSpan={6} className="px-3 py-2 font-semibold text-slate-800">
+                <tr className="bg-slate-700">
+                  <td colSpan={6} className="px-3 py-2 font-bold text-white">
                     {group.label}
                   </td>
                 </tr>
@@ -462,14 +465,14 @@ export function DashboardClient({
                       })}
                   </Fragment>
                 ))}
-                <tr className="bg-slate-50 text-xs font-medium text-slate-600">
-                  <td className="px-3 py-1.5" colSpan={2}>
+                <tr className="border-t-2 border-slate-300 bg-slate-200 font-bold text-slate-900">
+                  <td className="px-3 py-2" colSpan={2}>
                     {group.label}　小計
                   </td>
-                  <td className="px-3 py-1.5 text-right">{group.acquiredQty}件</td>
-                  <td className="px-3 py-1.5 text-right">{formatCurrency(group.acquiredAmount)}</td>
-                  <td className="px-3 py-1.5" />
-                  <td className="px-3 py-1.5 text-right">{formatCurrency(group.billedAmount)}</td>
+                  <td className="px-3 py-2 text-right">{group.acquiredQty}件</td>
+                  <td className="px-3 py-2 text-right">{formatCurrency(group.acquiredAmount)}</td>
+                  <td className="px-3 py-2 text-right">{group.effectiveQty}件</td>
+                  <td className="px-3 py-2 text-right">{formatCurrency(group.billedAmount)}</td>
                 </tr>
               </Fragment>
             ))}
@@ -482,14 +485,14 @@ export function DashboardClient({
             )}
           </tbody>
           {salesRows.length > 0 && (
-            <tfoot className="bg-slate-50 font-medium">
+            <tfoot className="border-t-2 border-slate-400 bg-slate-300 font-bold text-slate-900">
               <tr>
                 <td className="px-3 py-2" colSpan={2}>
                   合計
                 </td>
                 <td className="px-3 py-2 text-right">{totals.acquiredQty}件</td>
                 <td className="px-3 py-2 text-right">{formatCurrency(totals.acquiredAmount)}</td>
-                <td className="px-3 py-2 text-right" />
+                <td className="px-3 py-2 text-right">{totals.effectiveQty}件</td>
                 <td className="px-3 py-2 text-right">{formatCurrency(totals.billedAmount)}</td>
               </tr>
             </tfoot>
