@@ -58,6 +58,7 @@ Supabaseダッシュボードの「SQL Editor」で、`supabase/migrations/` 配
 | [`0018_expense_period.sql`](supabase/migrations/0018_expense_period.sql) | 経費に期間（単月／開始月〜終了月／継続）を設定できるように（`end_month`・`ongoing`）。既存の経費は単月のまま |
 | [`0019_pl_actual_entries.sql`](supabase/migrations/0019_pl_actual_entries.sql) | PLの結果を手入力できるように（`pl_actual_entries`、RPC `save_pl_actual`）。手入力した月は自動計算より優先 |
 | [`0020_profile_fk_set_null.sql`](supabase/migrations/0020_profile_fk_set_null.sql) | 担当者を削除できるように。登録者・更新者として参照している列は、削除時に空欄(null)にする |
+| [`0021_acquisition_target_month.sql`](supabase/migrations/0021_acquisition_target_month.sql) | 案件獲得に計上月（`target_month`）を追加。来月のアポを今月のうちに登録して、来月のページ・PLに載せられる |
 
 ### 3. 環境変数を設定
 

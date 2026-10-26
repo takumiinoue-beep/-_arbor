@@ -72,6 +72,7 @@ export type PriceRate = {
 export type Acquisition = {
   id: string;
   acquired_date: string;
+  target_month: string | null;
   project_id: string;
   rate_id: string | null;
   position: string | null;

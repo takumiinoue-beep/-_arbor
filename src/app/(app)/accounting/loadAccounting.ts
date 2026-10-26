@@ -28,7 +28,7 @@ export async function loadAccounting(fy: number) {
     fetchAllRows<SalesAcquisition>((a, b) =>
       supabase
         .from("acquisitions")
-        .select("acquired_date, quantity, unit_price, staff_id, project_id, rate_id")
+        .select("acquired_date, target_month, quantity, unit_price, staff_id, project_id, rate_id")
         .order("acquired_date")
         .order("id")
         .range(a, b)

@@ -3,13 +3,14 @@
 import { Fragment, useMemo, useState } from "react";
 import type { Acquisition, OpConfirmedQuantity, Profile } from "@/types/database";
 import { formatCurrency } from "@/lib/format";
+import { acquisitionMonth } from "@/lib/sales";
 import { AcquisitionButton, type AcquisitionProject } from "./AcquisitionButton";
 import { DeleteAcquisitionButton } from "./DeleteAcquisitionButton";
 import { OpConfirmedQuantityEditor } from "./OpConfirmedQuantityEditor";
 
 export type AcquisitionRow = Pick<
   Acquisition,
-  "id" | "acquired_date" | "project_id" | "rate_id" | "staff_id" | "unit_price" | "quantity" | "amount"
+  "id" | "acquired_date" | "target_month" | "project_id" | "rate_id" | "staff_id" | "unit_price" | "quantity" | "amount"
 > & {
   project: { id: string; name: string; confirmed_quantity: number } | null;
   staff: { id: string; name: string } | null;
@@ -33,9 +34,24 @@ type SalesRow = {
   entries: SalesEntry[];
 };
 
-type OpGroup = {
-  opName: string;
-  rows: SalesRow[];
+// 表示の切り替え：OPごと（OP→案件）／案件ごと（案件→OP）
+type View = "op" | "project";
+
+type MidRow = {
+  key: string;
+  label: string;
+  leaves: SalesRow[];
+  unitPriceText: string;
+  acquiredQty: number;
+  acquiredAmount: number;
+  effectiveQty: number;
+  billedAmount: number;
+};
+
+type TopGroup = {
+  key: string;
+  label: string;
+  mids: MidRow[];
   acquiredQty: number;
   acquiredAmount: number;
   billedAmount: number;
@@ -107,73 +123,101 @@ function buildSalesRows(
   );
 }
 
-type DailyByOp = {
-  opName: string;
+type DailyGroup = {
+  label: string;
   days: { day: number; date: string; count: number; amount: number }[];
+  // 計上月以外の月に登録した分（来月のアポを今月のうちに登録した分など）
+  other: { count: number; amount: number };
   totalCount: number;
   totalAmount: number;
 };
 
-// 指定した月の1日〜末日について、OPごとに獲得件数・獲得金額を積み上げる
+// 指定した月の1日〜末日について、OP（または案件）ごとに獲得件数・獲得金額を積み上げる
 // （データが無い日も0件として含め、月全体が見えるようにする）
-function buildDailyByOp(acquisitions: AcquisitionRow[], monthKey: string): DailyByOp[] {
+function buildDaily(acquisitions: AcquisitionRow[], monthKey: string, view: View): DailyGroup[] {
   const year = Number(monthKey.slice(0, 4));
   const month = Number(monthKey.slice(5, 7));
   const daysInMonth = new Date(Date.UTC(year, month, 0)).getUTCDate();
 
-  const byOp = new Map<string, Map<number, { count: number; amount: number }>>();
+  type Acc = { days: Map<number, { count: number; amount: number }>; other: { count: number; amount: number } };
+  const byLabel = new Map<string, Acc>();
   for (const a of acquisitions) {
-    if (a.acquired_date.slice(0, 7) !== monthKey) continue;
-    const opName = a.staff?.name ?? "不明";
-    const day = Number(a.acquired_date.slice(8, 10));
-    const opDays = byOp.get(opName) ?? new Map<number, { count: number; amount: number }>();
-    const entry = opDays.get(day) ?? { count: 0, amount: 0 };
-    entry.count += a.quantity;
-    entry.amount += a.amount;
-    opDays.set(day, entry);
-    byOp.set(opName, opDays);
+    if (acquisitionMonth(a) !== monthKey) continue;
+    const label = view === "op" ? (a.staff?.name ?? "不明") : (a.project?.name ?? "(削除済み案件)");
+    const acc = byLabel.get(label) ?? { days: new Map(), other: { count: 0, amount: 0 } };
+    if (a.acquired_date.slice(0, 7) === monthKey) {
+      const day = Number(a.acquired_date.slice(8, 10));
+      const entry = acc.days.get(day) ?? { count: 0, amount: 0 };
+      entry.count += a.quantity;
+      entry.amount += a.amount;
+      acc.days.set(day, entry);
+    } else {
+      acc.other.count += a.quantity;
+      acc.other.amount += a.amount;
+    }
+    byLabel.set(label, acc);
   }
 
-  const result: DailyByOp[] = [];
-  for (const [opName, opDays] of byOp) {
+  const result: DailyGroup[] = [];
+  for (const [label, acc] of byLabel) {
     const days = Array.from({ length: daysInMonth }, (_, i) => {
       const day = i + 1;
       const date = `${monthKey}-${String(day).padStart(2, "0")}`;
-      const entry = opDays.get(day) ?? { count: 0, amount: 0 };
+      const entry = acc.days.get(day) ?? { count: 0, amount: 0 };
       return { day, date, count: entry.count, amount: entry.amount };
     });
     result.push({
-      opName,
+      label,
       days,
-      totalCount: days.reduce((sum, d) => sum + d.count, 0),
-      totalAmount: days.reduce((sum, d) => sum + d.amount, 0),
+      other: acc.other,
+      totalCount: days.reduce((sum, d) => sum + d.count, 0) + acc.other.count,
+      totalAmount: days.reduce((sum, d) => sum + d.amount, 0) + acc.other.amount,
     });
   }
 
-  return result.sort((a, b) => a.opName.localeCompare(b.opName, "ja"));
+  return result.sort((a, b) => a.label.localeCompare(b.label, "ja"));
 }
 
-function groupByOp(rows: SalesRow[]): OpGroup[] {
-  const groups: OpGroup[] = [];
-  for (const row of rows) {
-    const last = groups[groups.length - 1];
-    const group = last && last.opName === row.opName ? last : undefined;
-    if (group) {
-      group.rows.push(row);
-      group.acquiredQty += row.acquiredQty;
-      group.acquiredAmount += row.acquiredAmount;
-      group.billedAmount += row.billedAmount;
-    } else {
-      groups.push({
-        opName: row.opName,
-        rows: [row],
-        acquiredQty: row.acquiredQty,
-        acquiredAmount: row.acquiredAmount,
-        billedAmount: row.billedAmount,
-      });
-    }
+// 単価ごとの行を、OP→案件（または案件→OP）の2段にまとめる
+function groupRows(rows: SalesRow[], view: View): TopGroup[] {
+  const topOf = (r: SalesRow) => (view === "op" ? r.opName : r.projectName);
+  const midOf = (r: SalesRow) => (view === "op" ? r.projectName : r.opName);
+
+  const tops = new Map<string, Map<string, SalesRow[]>>();
+  for (const r of rows) {
+    const mids = tops.get(topOf(r)) ?? new Map<string, SalesRow[]>();
+    mids.set(midOf(r), [...(mids.get(midOf(r)) ?? []), r]);
+    tops.set(topOf(r), mids);
   }
-  return groups;
+
+  const sum = <T,>(list: T[], f: (r: T) => number) => list.reduce((acc, r) => acc + f(r), 0);
+  const cmp = (a: string, b: string) => a.localeCompare(b, "ja");
+
+  return Array.from(tops, ([topLabel, mids]) => {
+    const midRows: MidRow[] = Array.from(mids, ([midLabel, leaves]) => {
+      const prices = Array.from(new Set(leaves.map((l) => l.unitPrice)));
+      leaves.sort((a, b) => b.unitPrice - a.unitPrice);
+      return {
+        key: `${view}|${topLabel}|${midLabel}`,
+        label: midLabel,
+        leaves,
+        unitPriceText: prices.length === 1 ? formatCurrency(prices[0]) : `${prices.length}種類`,
+        acquiredQty: sum(leaves, (l) => l.acquiredQty),
+        acquiredAmount: sum(leaves, (l) => l.acquiredAmount),
+        effectiveQty: sum(leaves, (l) => l.effectiveQty),
+        billedAmount: sum(leaves, (l) => l.billedAmount),
+      };
+    }).sort((a, b) => cmp(a.label, b.label));
+
+    return {
+      key: `${view}|${topLabel}`,
+      label: topLabel,
+      mids: midRows,
+      acquiredQty: sum(midRows, (m) => m.acquiredQty),
+      acquiredAmount: sum(midRows, (m) => m.acquiredAmount),
+      billedAmount: sum(midRows, (m) => m.billedAmount),
+    };
+  }).sort((a, b) => cmp(a.label, b.label));
 }
 
 export function DashboardClient({
@@ -195,11 +239,12 @@ export function DashboardClient({
 }) {
   const currentMonthKey = todayISO.slice(0, 7);
   const [monthTab, setMonthTab] = useState(currentMonthKey);
+  const [view, setView] = useState<View>("op");
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
   const [dailyExpanded, setDailyExpanded] = useState<Set<string>>(new Set());
 
-  function toggleExpanded(key: string) {
-    setExpanded((prev) => {
+  function toggle(setter: typeof setExpanded, key: string) {
+    setter((prev) => {
       const next = new Set(prev);
       if (next.has(key)) next.delete(key);
       else next.add(key);
@@ -207,17 +252,9 @@ export function DashboardClient({
     });
   }
 
-  function toggleDailyExpanded(opName: string) {
-    setDailyExpanded((prev) => {
-      const next = new Set(prev);
-      if (next.has(opName)) next.delete(opName);
-      else next.add(opName);
-      return next;
-    });
-  }
-
+  // 計上月（来月のアポなどは獲得日と別の月に載る）ごとのタブ
   const monthTabs = useMemo(() => {
-    const set = new Set(acquisitions.map((a) => a.acquired_date.slice(0, 7)));
+    const set = new Set(acquisitions.map(acquisitionMonth));
     set.add(currentMonthKey);
     return Array.from(set).sort();
   }, [acquisitions, currentMonthKey]);
@@ -229,20 +266,20 @@ export function DashboardClient({
 
   const filteredAcquisitions = useMemo(() => {
     if (monthTab === "all") return acquisitions;
-    return acquisitions.filter((a) => a.acquired_date.slice(0, 7) === monthTab);
+    return acquisitions.filter((a) => acquisitionMonth(a) === monthTab);
   }, [acquisitions, monthTab]);
 
   const salesRows = useMemo(
     () => buildSalesRows(filteredAcquisitions, acquisitions, opConfirmed),
     [filteredAcquisitions, acquisitions, opConfirmed]
   );
-  const opGroups = useMemo(() => groupByOp(salesRows), [salesRows]);
+  const groups = useMemo(() => groupRows(salesRows, view), [salesRows, view]);
 
   // タブが「全て」のときはデイリー表は当月を対象にする
   const dailyTargetMonth = monthTab === "all" ? currentMonthKey : monthTab;
-  const dailyByOp = useMemo(
-    () => buildDailyByOp(acquisitions, dailyTargetMonth),
-    [acquisitions, dailyTargetMonth]
+  const daily = useMemo(
+    () => buildDaily(acquisitions, dailyTargetMonth, view),
+    [acquisitions, dailyTargetMonth, view]
   );
 
   const totals = useMemo(
@@ -258,6 +295,11 @@ export function DashboardClient({
       ),
     [salesRows]
   );
+
+  const monthText = (m: string) =>
+    spansMultipleYears ? `${m.slice(0, 4)}年${Number(m.slice(5, 7))}月` : `${Number(m.slice(5, 7))}月`;
+  const midHeader = view === "op" ? "案件名" : "OP";
+  const topKind = view === "op" ? "OP" : "案件";
 
   return (
     <div className="flex flex-col gap-6">
@@ -284,12 +326,31 @@ export function DashboardClient({
                 : "border-transparent text-slate-500 hover:text-slate-700"
             }`}
           >
-            {spansMultipleYears ? `${m.slice(0, 4)}年${Number(m.slice(5, 7))}月` : `${Number(m.slice(5, 7))}月`}
+            {monthText(m)}
           </button>
         ))}
       </div>
 
-      <div className="flex justify-end">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div className="inline-flex overflow-hidden rounded-md border border-slate-200 text-sm">
+          {(
+            [
+              ["op", "OPごと"],
+              ["project", "案件ごと"],
+            ] as const
+          ).map(([value, label]) => (
+            <button
+              key={value}
+              type="button"
+              onClick={() => setView(value)}
+              className={`px-4 py-1.5 ${
+                view === value ? "bg-slate-900 text-white" : "bg-white text-slate-600 hover:bg-slate-100"
+              }`}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
         <AcquisitionButton projects={projects} staffList={staffList} currentUserId={currentUserId} />
       </div>
 
@@ -297,8 +358,7 @@ export function DashboardClient({
         <table className="min-w-full divide-y divide-slate-200 text-sm">
           <thead className="bg-slate-50">
             <tr>
-              <th className="px-3 py-2 text-left font-medium text-slate-500">OP</th>
-              <th className="px-3 py-2 text-left font-medium text-slate-500">案件名</th>
+              <th className="px-3 py-2 text-left font-medium text-slate-500">{midHeader}</th>
               <th className="px-3 py-2 text-right font-medium text-slate-500">単価</th>
               <th className="px-3 py-2 text-right font-medium text-slate-500">獲得件数</th>
               <th className="px-3 py-2 text-right font-medium text-slate-500">獲得金額</th>
@@ -307,72 +367,104 @@ export function DashboardClient({
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-100">
-            {opGroups.map((group) => (
-              <Fragment key={group.opName}>
+            {groups.map((group) => (
+              <Fragment key={group.key}>
                 <tr className="bg-slate-100">
-                  <td colSpan={7} className="px-3 py-2 font-semibold text-slate-800">
-                    {group.opName}
+                  <td colSpan={6} className="px-3 py-2 font-semibold text-slate-800">
+                    {group.label}
                   </td>
                 </tr>
-                {group.rows.map((r) => (
-                  <Fragment key={r.key}>
+                {group.mids.map((mid) => (
+                  <Fragment key={mid.key}>
                     <tr className="hover:bg-slate-50">
-                      <td className="px-3 py-2" />
-                      <td className="px-3 py-2 text-slate-600">
+                      <td className="px-3 py-2 text-slate-700">
                         <button
                           type="button"
-                          onClick={() => toggleExpanded(r.key)}
-                          className="mr-1.5 inline-block w-3 text-xs text-slate-400 hover:text-slate-700"
-                          aria-label={expanded.has(r.key) ? "内訳を閉じる" : "内訳を開く"}
+                          onClick={() => toggle(setExpanded, mid.key)}
+                          className="flex items-center gap-1.5 text-left hover:text-slate-900"
+                          aria-label={expanded.has(mid.key) ? "単価ごとの内訳を閉じる" : "単価ごとの内訳を開く"}
                         >
-                          {expanded.has(r.key) ? "▼" : "▶"}
+                          <span className="inline-block w-3 text-xs text-slate-400">
+                            {expanded.has(mid.key) ? "▼" : "▶"}
+                          </span>
+                          {mid.label}
                         </button>
-                        {r.projectName}
                       </td>
-                      <td className="px-3 py-2 text-right text-slate-700">{formatCurrency(r.unitPrice)}</td>
-                      <td className="px-3 py-2 text-right text-slate-700">{r.acquiredQty}件</td>
-                      <td className="px-3 py-2 text-right text-slate-700">{formatCurrency(r.acquiredAmount)}</td>
-                      <td className="px-3 py-2 text-right">
-                        {isAdmin ? (
-                          <OpConfirmedQuantityEditor
-                            projectId={r.projectId}
-                            rateId={r.rateId}
-                            staffId={r.staffId}
-                            confirmedQuantity={r.effectiveQty}
-                            unitPrice={r.unitPrice}
-                          />
-                        ) : (
-                          <span className="text-slate-700">{r.effectiveQty}件</span>
-                        )}
-                      </td>
+                      <td className="px-3 py-2 text-right text-slate-500">{mid.unitPriceText}</td>
+                      <td className="px-3 py-2 text-right text-slate-700">{mid.acquiredQty}件</td>
+                      <td className="px-3 py-2 text-right text-slate-700">{formatCurrency(mid.acquiredAmount)}</td>
+                      <td className="px-3 py-2 text-right text-slate-700">{mid.effectiveQty}件</td>
                       <td className="px-3 py-2 text-right font-medium text-slate-900">
-                        {formatCurrency(r.billedAmount)}
+                        {formatCurrency(mid.billedAmount)}
                       </td>
                     </tr>
-                    {expanded.has(r.key) &&
-                      r.entries.map((e) => (
-                        <tr key={e.id} className="bg-slate-50/60 text-xs">
-                          <td className="px-3 py-1.5" />
-                          <td className="px-3 py-1.5 pl-8 text-slate-500">└ {e.acquiredDate}</td>
-                          <td className="px-3 py-1.5" />
-                          <td className="px-3 py-1.5 text-right text-slate-500">{e.quantity}件</td>
-                          <td className="px-3 py-1.5 text-right text-slate-500">
-                            {formatCurrency(e.quantity * r.unitPrice)}
-                          </td>
-                          <td className="px-3 py-1.5" colSpan={2}>
-                            {isAdmin && (
-                              <div className="flex justify-end">
-                                <DeleteAcquisitionButton id={e.id} />
-                              </div>
-                            )}
-                          </td>
-                        </tr>
-                      ))}
+                    {expanded.has(mid.key) &&
+                      mid.leaves.map((r) => {
+                        const leafKey = `${mid.key}|${r.key}`;
+                        return (
+                          <Fragment key={leafKey}>
+                            <tr className="bg-slate-50/70 text-xs">
+                              <td className="px-3 py-1.5 pl-9 text-slate-600">
+                                <button
+                                  type="button"
+                                  onClick={() => toggle(setExpanded, leafKey)}
+                                  className="flex items-center gap-1.5 text-left hover:text-slate-900"
+                                  aria-label={expanded.has(leafKey) ? "登録日ごとの内訳を閉じる" : "登録日ごとの内訳を開く"}
+                                >
+                                  <span className="inline-block w-3 text-slate-400">
+                                    {expanded.has(leafKey) ? "▼" : "▶"}
+                                  </span>
+                                  単価 {formatCurrency(r.unitPrice)}
+                                </button>
+                              </td>
+                              <td className="px-3 py-1.5 text-right text-slate-600">{formatCurrency(r.unitPrice)}</td>
+                              <td className="px-3 py-1.5 text-right text-slate-600">{r.acquiredQty}件</td>
+                              <td className="px-3 py-1.5 text-right text-slate-600">
+                                {formatCurrency(r.acquiredAmount)}
+                              </td>
+                              <td className="px-3 py-1.5 text-right">
+                                {isAdmin ? (
+                                  <OpConfirmedQuantityEditor
+                                    projectId={r.projectId}
+                                    rateId={r.rateId}
+                                    staffId={r.staffId}
+                                    confirmedQuantity={r.effectiveQty}
+                                    unitPrice={r.unitPrice}
+                                  />
+                                ) : (
+                                  <span className="text-slate-600">{r.effectiveQty}件</span>
+                                )}
+                              </td>
+                              <td className="px-3 py-1.5 text-right font-medium text-slate-800">
+                                {formatCurrency(r.billedAmount)}
+                              </td>
+                            </tr>
+                            {expanded.has(leafKey) &&
+                              r.entries.map((e) => (
+                                <tr key={e.id} className="bg-white text-xs">
+                                  <td className="px-3 py-1 pl-16 text-slate-500">└ {e.acquiredDate}</td>
+                                  <td className="px-3 py-1" />
+                                  <td className="px-3 py-1 text-right text-slate-500">{e.quantity}件</td>
+                                  <td className="px-3 py-1 text-right text-slate-500">
+                                    {formatCurrency(e.quantity * r.unitPrice)}
+                                  </td>
+                                  <td className="px-3 py-1" colSpan={2}>
+                                    {isAdmin && (
+                                      <div className="flex justify-end">
+                                        <DeleteAcquisitionButton id={e.id} />
+                                      </div>
+                                    )}
+                                  </td>
+                                </tr>
+                              ))}
+                          </Fragment>
+                        );
+                      })}
                   </Fragment>
                 ))}
                 <tr className="bg-slate-50 text-xs font-medium text-slate-600">
-                  <td className="px-3 py-1.5" colSpan={3}>
-                    {group.opName}　小計
+                  <td className="px-3 py-1.5" colSpan={2}>
+                    {group.label}　小計
                   </td>
                   <td className="px-3 py-1.5 text-right">{group.acquiredQty}件</td>
                   <td className="px-3 py-1.5 text-right">{formatCurrency(group.acquiredAmount)}</td>
@@ -383,7 +475,7 @@ export function DashboardClient({
             ))}
             {salesRows.length === 0 && (
               <tr>
-                <td colSpan={7} className="px-3 py-6 text-center text-slate-400">
+                <td colSpan={6} className="px-3 py-6 text-center text-slate-400">
                   この期間の獲得データがありません
                 </td>
               </tr>
@@ -392,7 +484,7 @@ export function DashboardClient({
           {salesRows.length > 0 && (
             <tfoot className="bg-slate-50 font-medium">
               <tr>
-                <td className="px-3 py-2" colSpan={3}>
+                <td className="px-3 py-2" colSpan={2}>
                   合計
                 </td>
                 <td className="px-3 py-2 text-right">{totals.acquiredQty}件</td>
@@ -404,34 +496,33 @@ export function DashboardClient({
           )}
         </table>
       </div>
+      <p className="-mt-3 text-xs text-slate-400">
+        {topKind}ごとにまとめています。行の▶を押すと単価ごとの件数、さらに押すと登録日ごとの内訳が見えます。有効件数は単価ごとの行で編集できます。
+      </p>
 
       <div className="rounded-lg border border-slate-200 bg-white p-4">
         <h2 className="mb-3 text-sm font-semibold text-slate-700">
-          デイリー実績（
-          {spansMultipleYears
-            ? `${dailyTargetMonth.slice(0, 4)}年${Number(dailyTargetMonth.slice(5, 7))}月`
-            : `${Number(dailyTargetMonth.slice(5, 7))}月`}
-          ）
+          デイリー実績（{monthText(dailyTargetMonth)}・{view === "op" ? "OPごと" : "案件ごと"}）
         </h2>
         <div className="flex flex-col gap-2">
-          {dailyByOp.map((op) => (
-            <div key={op.opName} className="overflow-hidden rounded-md border border-slate-200">
+          {daily.map((g) => (
+            <div key={g.label} className="overflow-hidden rounded-md border border-slate-200">
               <button
                 type="button"
-                onClick={() => toggleDailyExpanded(op.opName)}
+                onClick={() => toggle(setDailyExpanded, g.label)}
                 className="flex w-full items-center justify-between bg-slate-100 px-3 py-2 text-left"
               >
                 <span className="font-semibold text-slate-800">
                   <span className="mr-1.5 inline-block w-3 text-xs text-slate-400">
-                    {dailyExpanded.has(op.opName) ? "▼" : "▶"}
+                    {dailyExpanded.has(g.label) ? "▼" : "▶"}
                   </span>
-                  {op.opName}
+                  {g.label}
                 </span>
                 <span className="text-xs text-slate-500">
-                  月合計 {op.totalCount}件 / {formatCurrency(op.totalAmount)}
+                  月合計 {g.totalCount}件 / {formatCurrency(g.totalAmount)}
                 </span>
               </button>
-              {dailyExpanded.has(op.opName) && (
+              {dailyExpanded.has(g.label) && (
                 <div className="overflow-x-auto">
                   <table className="min-w-full divide-y divide-slate-200 text-xs">
                     <thead className="bg-slate-50">
@@ -442,7 +533,14 @@ export function DashboardClient({
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-100">
-                      {op.days.map((d) => (
+                      {g.other.count > 0 && (
+                        <tr className="bg-amber-50 text-slate-700">
+                          <td className="px-2 py-1">他の月に登録（アポなど）</td>
+                          <td className="px-2 py-1 text-right">{g.other.count}件</td>
+                          <td className="px-2 py-1 text-right">{formatCurrency(g.other.amount)}</td>
+                        </tr>
+                      )}
+                      {g.days.map((d) => (
                         <tr key={d.date} className={d.count === 0 ? "text-slate-300" : undefined}>
                           <td className="px-2 py-1">{d.day}日</td>
                           <td className="px-2 py-1 text-right">{d.count}件</td>
@@ -455,7 +553,7 @@ export function DashboardClient({
               )}
             </div>
           ))}
-          {dailyByOp.length === 0 && (
+          {daily.length === 0 && (
             <p className="px-1 py-4 text-center text-sm text-slate-400">この月の獲得データがありません</p>
           )}
         </div>

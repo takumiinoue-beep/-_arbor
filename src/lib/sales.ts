@@ -1,11 +1,17 @@
 export type SalesAcquisition = {
   acquired_date: string;
+  target_month?: string | null;
   quantity: number;
   unit_price: number;
   staff_id: string;
   project_id: string;
   rate_id: string | null;
 };
+
+// その獲得を計上する月（"YYYY-MM"）。来月のアポなどは計上月を別に持ち、無ければ獲得日の月
+export function acquisitionMonth(a: { acquired_date: string; target_month?: string | null }): string {
+  return (a.target_month ?? a.acquired_date).slice(0, 7);
+}
 
 export type OpConfirmedRecord = {
   project_id: string;
@@ -58,7 +64,7 @@ export function monthlyBilledByStaff(args: {
       g = { staffId: a.staff_id, unitPrice: a.unit_price, effectiveQty, totalQty: 0, byMonth: new Map() };
       groups.set(key, g);
     }
-    const month = a.acquired_date.slice(0, 7);
+    const month = acquisitionMonth(a);
     g.totalQty += a.quantity;
     g.byMonth.set(month, (g.byMonth.get(month) ?? 0) + a.quantity);
   }

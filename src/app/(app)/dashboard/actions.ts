@@ -77,6 +77,11 @@ export async function createAcquisition(
   const acquiredDate = String(formData.get("acquired_date") ?? "").trim();
   const staffId = String(formData.get("staff_id") ?? "").trim();
   const rowsRaw = String(formData.get("rows") ?? "[]");
+  // 計上月（来月のアポなど）。獲得日と同じ月なら指定なし(null)として扱う
+  const targetMonthRaw = String(formData.get("target_month") ?? "").trim();
+  if (targetMonthRaw && !/^\d{4}-\d{2}$/.test(targetMonthRaw)) return { error: "計上月の形式が不正です。" };
+  const targetMonth =
+    targetMonthRaw && targetMonthRaw !== acquiredDate.slice(0, 7) ? `${targetMonthRaw}-01` : null;
 
   if (!acquiredDate) return { error: "日付は必須です。" };
   if (!staffId) return { error: "OPを選択してください。" };
@@ -90,6 +95,7 @@ export async function createAcquisition(
     p_staff_id: staffId,
     p_created_by: profile.id,
     p_rows: parsed.value,
+    p_target_month: targetMonth,
   });
 
   if (error) return { error: `登録に失敗しました: ${error.message}` };
