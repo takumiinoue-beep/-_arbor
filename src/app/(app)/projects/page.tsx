@@ -32,7 +32,6 @@ export default async function ProjectsPage() {
       <ProjectsClient
         projects={(projects as ProjectWithStaff[]) ?? []}
         staffList={staffList ?? []}
-        currentUserId={profile.id}
         isAdmin={profile.role === "admin"}
         todayISO={todayISO}
       />

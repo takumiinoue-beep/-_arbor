@@ -3,7 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
-import { requireAdmin, requireProfile } from "@/lib/auth";
+import { requireAdmin } from "@/lib/auth";
 import type { ProjectStatus } from "@/types/database";
 
 type FormState = { error: string } | null;
@@ -198,131 +198,6 @@ export async function deleteProject(id: string) {
   await requireAdmin();
   const supabase = await createClient();
   const { error } = await supabase.from("projects").delete().eq("id", id);
-  if (error) throw new Error(error.message);
-
-  revalidatePath("/projects");
-  revalidatePath("/dashboard");
-}
-
-const PROJECT_STATUSES: ProjectStatus[] = ["進行中", "完了", "中止"];
-
-export async function updateStatus(projectId: string, newStatus: ProjectStatus) {
-  await requireAdmin();
-
-  if (!PROJECT_STATUSES.includes(newStatus)) {
-    throw new Error("ステータスの値が不正です。");
-  }
-
-  const supabase = await createClient();
-  const { error } = await supabase
-    .from("projects")
-    .update({ status: newStatus })
-    .eq("id", projectId);
-
-  if (error) throw new Error(error.message);
-
-  revalidatePath("/projects");
-  revalidatePath("/dashboard");
-}
-
-export async function updateQuantity(projectId: string, newQuantity: number) {
-  await requireAdmin();
-
-  if (!Number.isInteger(newQuantity) || newQuantity < 0) {
-    throw new Error("件数は0以上の整数で入力してください。");
-  }
-
-  const supabase = await createClient();
-  const { error } = await supabase
-    .from("projects")
-    .update({ quantity: newQuantity })
-    .eq("id", projectId);
-
-  if (error) throw new Error(error.message);
-
-  revalidatePath("/projects");
-  revalidatePath("/dashboard");
-}
-
-export async function updateActual(projectId: string, newQuantity: number) {
-  await requireProfile();
-  const supabase = await createClient();
-  const { error } = await supabase.rpc("update_project_actual", {
-    p_project_id: projectId,
-    p_new_quantity: newQuantity,
-  });
-
-  if (error) throw new Error(error.message);
-
-  revalidatePath("/projects");
-  revalidatePath("/dashboard");
-}
-
-export async function updateRateQuantity(rateId: string, newQuantity: number) {
-  await requireAdmin();
-
-  if (!Number.isInteger(newQuantity) || newQuantity < 0) {
-    throw new Error("件数は0以上の整数で入力してください。");
-  }
-
-  const supabase = await createClient();
-  const { error } = await supabase
-    .from("price_rates")
-    .update({ quantity: newQuantity })
-    .eq("id", rateId);
-
-  if (error) throw new Error(error.message);
-
-  revalidatePath("/projects");
-  revalidatePath("/dashboard");
-}
-
-export async function updateRateActual(rateId: string, newQuantity: number) {
-  await requireProfile();
-  const supabase = await createClient();
-  const { error } = await supabase.rpc("update_price_rate_actual", {
-    p_rate_id: rateId,
-    p_new_quantity: newQuantity,
-  });
-
-  if (error) throw new Error(error.message);
-
-  revalidatePath("/projects");
-  revalidatePath("/dashboard");
-}
-
-export async function updateConfirmedQuantity(projectId: string, newQuantity: number) {
-  await requireAdmin();
-
-  if (!Number.isInteger(newQuantity) || newQuantity < 0) {
-    throw new Error("件数は0以上の整数で入力してください。");
-  }
-
-  const supabase = await createClient();
-  const { error } = await supabase
-    .from("projects")
-    .update({ confirmed_quantity: newQuantity })
-    .eq("id", projectId);
-
-  if (error) throw new Error(error.message);
-
-  revalidatePath("/projects");
-  revalidatePath("/dashboard");
-}
-
-export async function updateRateConfirmedQuantity(rateId: string, newQuantity: number) {
-  await requireAdmin();
-
-  if (!Number.isInteger(newQuantity) || newQuantity < 0) {
-    throw new Error("件数は0以上の整数で入力してください。");
-  }
-
-  const supabase = await createClient();
-  const { error } = await supabase
-    .from("price_rates")
-    .update({ confirmed_quantity: newQuantity })
-    .eq("id", rateId);
-
   if (error) throw new Error(error.message);
 
   revalidatePath("/projects");

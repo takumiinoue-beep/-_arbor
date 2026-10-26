@@ -5,13 +5,6 @@ import Link from "next/link";
 import type { PriceRate, Profile, ProjectStatus, ProjectWithStaff } from "@/types/database";
 import { formatCurrency, formatPercent } from "@/lib/format";
 import { getEffectiveCounts } from "@/lib/aggregate";
-import { ActualEditor } from "./ActualEditor";
-import { TargetQuantityEditor } from "./TargetQuantityEditor";
-import { RateQuantityEditor } from "./RateQuantityEditor";
-import { RateActualEditor } from "./RateActualEditor";
-import { ConfirmedQuantityEditor } from "./ConfirmedQuantityEditor";
-import { RateConfirmedQuantityEditor } from "./RateConfirmedQuantityEditor";
-import { StatusEditor } from "./StatusEditor";
 import { DeleteProjectButton } from "./DeleteProjectButton";
 
 function rateRangeLabel(rate: PriceRate) {
@@ -31,13 +24,11 @@ const STATUS_ORDER: Record<ProjectStatus, number> = { 進行中: 0, 中止: 1, �
 export function ProjectsClient({
   projects,
   staffList,
-  currentUserId,
   isAdmin,
   todayISO,
 }: {
   projects: ProjectWithStaff[];
   staffList: Profile[];
-  currentUserId: string;
   isAdmin: boolean;
   todayISO: string;
 }) {
@@ -204,7 +195,6 @@ export function ProjectsClient({
           <tbody className="divide-y divide-slate-100">
             {filtered.map((p) => {
               const diff = p.actual - p.budget;
-              const canEditActual = isAdmin || p.staff_id === currentUserId;
               const rates = sortedRates(p.price_rates);
               const hasRates = rates.length > 0;
               const {
@@ -240,12 +230,6 @@ export function ProjectsClient({
                           <span className="text-slate-700">{totalBudgetQty}件</span>
                           <span className="ml-auto text-xs text-slate-400">{formatCurrency(p.budget)}</span>
                         </div>
-                      ) : isAdmin ? (
-                        <TargetQuantityEditor
-                          projectId={p.id}
-                          quantity={p.quantity}
-                          unitPrice={p.unit_price}
-                        />
                       ) : (
                         <span className="text-slate-700">
                           {formatCurrency(p.budget)}
@@ -259,12 +243,6 @@ export function ProjectsClient({
                           <span className="text-slate-700">{totalActualQty}件</span>
                           <span className="ml-auto text-xs text-slate-400">{formatCurrency(p.actual)}</span>
                         </div>
-                      ) : canEditActual ? (
-                        <ActualEditor
-                          projectId={p.id}
-                          actualQuantity={p.actual_quantity}
-                          unitPrice={p.unit_price}
-                        />
                       ) : (
                         <span className="text-slate-700">
                           {formatCurrency(p.actual)}
@@ -278,12 +256,6 @@ export function ProjectsClient({
                           <span className="text-slate-700">{totalConfirmedQty}件</span>
                           <span className="ml-auto text-xs text-slate-400">{formatCurrency(totalConfirmedAmount)}</span>
                         </div>
-                      ) : isAdmin ? (
-                        <ConfirmedQuantityEditor
-                          projectId={p.id}
-                          confirmedQuantity={p.confirmed_quantity}
-                          unitPrice={p.unit_price}
-                        />
                       ) : (
                         <span className="text-slate-700">
                           {formatCurrency(totalConfirmedAmount)}
@@ -303,21 +275,17 @@ export function ProjectsClient({
                       {formatPercent(totalConfirmedAmount, p.budget)}
                     </td>
                     <td className="px-3 py-2">
-                      {isAdmin ? (
-                        <StatusEditor projectId={p.id} status={p.status} />
-                      ) : (
-                        <span
-                          className={`rounded-full px-2 py-0.5 text-xs ${
-                            p.status === "完了"
-                              ? "bg-emerald-100 text-emerald-700"
-                              : p.status === "中止"
-                                ? "bg-slate-200 text-slate-600"
-                                : "bg-blue-100 text-blue-700"
-                          }`}
-                        >
-                          {p.status}
-                        </span>
-                      )}
+                      <span
+                        className={`rounded-full px-2 py-0.5 text-xs ${
+                          p.status === "完了"
+                            ? "bg-emerald-100 text-emerald-700"
+                            : p.status === "中止"
+                              ? "bg-slate-200 text-slate-600"
+                              : "bg-blue-100 text-blue-700"
+                        }`}
+                      >
+                        {p.status}
+                      </span>
                     </td>
                     <td className="max-w-[160px] truncate px-3 py-2 text-slate-500" title={p.notes ?? ""}>
                       {p.notes ?? ""}
@@ -349,42 +317,22 @@ export function ProjectsClient({
                             └ {r.position}（{rateRangeLabel(r)}）
                           </td>
                           <td className="px-3 py-1.5 text-right">
-                            {isAdmin ? (
-                              <RateQuantityEditor rateId={r.id} quantity={r.quantity} unitPrice={r.unit_price} />
-                            ) : (
-                              <span className="text-slate-500">
-                                {formatCurrency(rBudget)}
-                                <span className="ml-1 text-slate-400">({r.quantity}件)</span>
-                              </span>
-                            )}
+                            <span className="text-slate-500">
+                              {formatCurrency(rBudget)}
+                              <span className="ml-1 text-slate-400">({r.quantity}件)</span>
+                            </span>
                           </td>
                           <td className="px-3 py-1.5 text-right">
-                            {canEditActual ? (
-                              <RateActualEditor
-                                rateId={r.id}
-                                actualQuantity={r.actual_quantity}
-                                unitPrice={r.unit_price}
-                              />
-                            ) : (
-                              <span className="text-slate-500">
-                                {formatCurrency(rActual)}
-                                <span className="ml-1 text-slate-400">({r.actual_quantity}件)</span>
-                              </span>
-                            )}
+                            <span className="text-slate-500">
+                              {formatCurrency(rActual)}
+                              <span className="ml-1 text-slate-400">({r.actual_quantity}件)</span>
+                            </span>
                           </td>
                           <td className="px-3 py-1.5 text-right">
-                            {isAdmin ? (
-                              <RateConfirmedQuantityEditor
-                                rateId={r.id}
-                                confirmedQuantity={r.confirmed_quantity}
-                                unitPrice={r.unit_price}
-                              />
-                            ) : (
-                              <span className="text-slate-500">
-                                {formatCurrency(rConfirmedAmount)}
-                                <span className="ml-1 text-slate-400">({r.confirmed_quantity}件)</span>
-                              </span>
-                            )}
+                            <span className="text-slate-500">
+                              {formatCurrency(rConfirmedAmount)}
+                              <span className="ml-1 text-slate-400">({r.confirmed_quantity}件)</span>
+                            </span>
                           </td>
                           <td className="px-3 py-1.5 text-right text-slate-500">
                             {formatPercent(r.confirmed_quantity, r.actual_quantity)}
