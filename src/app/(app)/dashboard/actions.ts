@@ -13,10 +13,13 @@ type AcquisitionRowInput = {
   employee_count: number | null;
   unit_price: number;
   quantity: number;
+  staff_id: string;
+  target_month: string | null; // "YYYY-MM-01"。獲得日と同じ月なら null
 };
 
 function parseAcquisitionRows(
-  raw: string
+  raw: string,
+  acquiredDate: string
 ): { ok: true; value: AcquisitionRowInput[] } | { ok: false; error: string } {
   let rows: unknown;
   try {
@@ -32,6 +35,15 @@ function parseAcquisitionRows(
   for (const row of rows) {
     if (typeof row !== "object" || row === null) continue;
     const r = row as Record<string, unknown>;
+    const staffId = String(r.staff_id ?? "").trim();
+    if (!staffId) return { ok: false, error: "OPを選択してください。" };
+
+    const targetMonthRaw = String(r.target_month ?? "").trim();
+    if (targetMonthRaw && !/^\d{4}-\d{2}$/.test(targetMonthRaw)) return { ok: false, error: "計上月の形式が不正です。" };
+    // 獲得日と同じ月なら指定なし(null)として扱う
+    const targetMonth =
+      targetMonthRaw && targetMonthRaw !== acquiredDate.slice(0, 7) ? `${targetMonthRaw}-01` : null;
+
     const projectId = String(r.project_id ?? "").trim();
     if (!projectId) return { ok: false, error: "案件（商材）を選択してください。" };
 
@@ -60,6 +72,8 @@ function parseAcquisitionRows(
       employee_count: employeeCount,
       unit_price: unitPrice,
       quantity,
+      staff_id: staffId,
+      target_month: targetMonth,
     });
   }
 
@@ -75,27 +89,21 @@ export async function createAcquisition(
   const profile = await requireProfile();
 
   const acquiredDate = String(formData.get("acquired_date") ?? "").trim();
-  const staffId = String(formData.get("staff_id") ?? "").trim();
   const rowsRaw = String(formData.get("rows") ?? "[]");
-  // 計上月（来月のアポなど）。獲得日と同じ月なら指定なし(null)として扱う
-  const targetMonthRaw = String(formData.get("target_month") ?? "").trim();
-  if (targetMonthRaw && !/^\d{4}-\d{2}$/.test(targetMonthRaw)) return { error: "計上月の形式が不正です。" };
-  const targetMonth =
-    targetMonthRaw && targetMonthRaw !== acquiredDate.slice(0, 7) ? `${targetMonthRaw}-01` : null;
 
   if (!acquiredDate) return { error: "日付は必須です。" };
-  if (!staffId) return { error: "OPを選択してください。" };
 
-  const parsed = parseAcquisitionRows(rowsRaw);
+  // OP・計上月は行ごとに指定する（複数のOPの獲得を1回でまとめて登録できる）
+  const parsed = parseAcquisitionRows(rowsRaw, acquiredDate);
   if (!parsed.ok) return { error: parsed.error };
 
   const supabase = await createClient();
   const { error } = await supabase.rpc("create_acquisitions_batch", {
     p_acquired_date: acquiredDate,
-    p_staff_id: staffId,
+    p_staff_id: null,
     p_created_by: profile.id,
     p_rows: parsed.value,
-    p_target_month: targetMonth,
+    p_target_month: null,
   });
 
   if (error) return { error: `登録に失敗しました: ${error.message}` };
