@@ -60,6 +60,7 @@ Supabaseダッシュボードの「SQL Editor」で、`supabase/migrations/` 配
 | [`0020_profile_fk_set_null.sql`](supabase/migrations/0020_profile_fk_set_null.sql) | 担当者を削除できるように。登録者・更新者として参照している列は、削除時に空欄(null)にする |
 | [`0021_acquisition_target_month.sql`](supabase/migrations/0021_acquisition_target_month.sql) | 案件獲得に計上月（`target_month`）を追加。来月のアポを今月のうちに登録して、来月のページ・PLに載せられる |
 | [`0022_acquisitions_batch_per_row.sql`](supabase/migrations/0022_acquisitions_batch_per_row.sql) | 案件獲得の登録を、行ごとにOP・計上月を指定できるように（複数OPのまとめ登録） |
+| [`0023_link_acquisitions_to_project.sql`](supabase/migrations/0023_link_acquisitions_to_project.sql) | 新しい月の案件を登録・更新したとき、その月に計上する獲得（来月のアポなど）を同名の前の案件から付け替える（RPC `link_acquisitions_to_project`） |
 
 ### 3. 環境変数を設定
 

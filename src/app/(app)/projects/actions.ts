@@ -129,6 +129,13 @@ function parseProjectForm(formData: FormData) {
   } as const;
 }
 
+// 来月計上として先に登録した獲得（来月のアポなど）を、この案件につなげる。
+// 案件の登録・更新自体は成功しているので、失敗しても案件の保存は止めない。
+async function linkMonthAcquisitions(supabase: Awaited<ReturnType<typeof createClient>>, projectId: string) {
+  const { error } = await supabase.rpc("link_acquisitions_to_project", { p_project_id: projectId });
+  if (error) console.error("link_acquisitions_to_project failed:", error.message);
+}
+
 export async function createProject(
   _prevState: FormState,
   formData: FormData
@@ -148,6 +155,8 @@ export async function createProject(
       .insert(parsed.priceRates.map((r) => ({ ...r, project_id: data.id })));
     if (rateError) return { error: `料金表の登録に失敗しました: ${rateError.message}` };
   }
+
+  await linkMonthAcquisitions(supabase, data.id);
 
   revalidatePath("/projects");
   revalidatePath("/dashboard");
@@ -177,6 +186,8 @@ export async function updateProject(
       .insert(parsed.priceRates.map((r) => ({ ...r, project_id: id })));
     if (rateError) return { error: `料金表の更新に失敗しました: ${rateError.message}` };
   }
+
+  await linkMonthAcquisitions(supabase, id);
 
   revalidatePath("/projects");
   revalidatePath("/dashboard");
