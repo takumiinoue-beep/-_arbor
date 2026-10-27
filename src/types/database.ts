@@ -7,6 +7,7 @@ export type Profile = {
   name: string;
   position: string | null;
   role: Role;
+  member_no: number | null;
   created_at: string;
 };
 

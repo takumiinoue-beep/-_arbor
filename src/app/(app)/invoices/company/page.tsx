@@ -13,7 +13,7 @@ export default async function CompanyPage() {
   const [{ data: settingsRows }, { data: bankAccounts }, { data: staffList }] = await Promise.all([
     supabase.from("company_settings").select("*").order("id").limit(1),
     supabase.from("company_bank_accounts").select("*").order("id"),
-    supabase.from("profiles").select("*").order("name"),
+    supabase.from("profiles").select("*").order("member_no", { nullsFirst: false }).order("name"),
   ]);
 
   const settings = settingsRows?.[0] ?? null;
@@ -82,6 +82,7 @@ export default async function CompanyPage() {
         <table className="min-w-full divide-y divide-slate-200 text-sm">
           <thead className="bg-slate-50">
             <tr>
+              <th className="px-3 py-2 text-left font-medium text-slate-500">番号</th>
               <th className="px-3 py-2 text-left font-medium text-slate-500">担当者名</th>
               <th className="px-3 py-2 text-left font-medium text-slate-500">所属・役職</th>
               <th className="px-3 py-2 text-left font-medium text-slate-500">権限</th>
@@ -91,6 +92,7 @@ export default async function CompanyPage() {
           <tbody className="divide-y divide-slate-100">
             {(staffList ?? []).map((s) => (
               <tr key={s.id} className="hover:bg-slate-50">
+                <td className="px-3 py-2 text-slate-600">{s.member_no ?? "-"}</td>
                 <td className="px-3 py-2 font-medium text-slate-800">{s.name}</td>
                 <td className="px-3 py-2 text-slate-600">{s.position ?? "-"}</td>
                 <td className="px-3 py-2">
@@ -114,7 +116,7 @@ export default async function CompanyPage() {
             ))}
             {(staffList ?? []).length === 0 && (
               <tr>
-                <td colSpan={4} className="px-3 py-6 text-center text-slate-400">
+                <td colSpan={5} className="px-3 py-6 text-center text-slate-400">
                   担当者が登録されていません
                 </td>
               </tr>

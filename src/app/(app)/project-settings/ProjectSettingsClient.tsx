@@ -63,7 +63,7 @@ export function ProjectSettingsClient({
   todayISO,
 }: {
   projects: SettingsProject[];
-  staffList: { id: string; name: string }[];
+  staffList: { id: string; name: string }[]; // メンバー番号の小さい順に並んでいる
   assignments: ProjectAssignment[];
   acquisitions: SettingsAcquisition[];
   isAdmin: boolean;
@@ -187,7 +187,11 @@ export function ProjectSettingsClient({
   });
 
   // メンバーのまとまり（最初に出てきた順）
-  const staffOrder = Array.from(new Set(rows.map((r) => r.staffId)));
+  // メンバー番号の小さい順（staffList はその順で渡される）
+  const staffRank = new Map(staffList.map((s, i) => [s.id, i]));
+  const staffOrder = Array.from(new Set(rows.map((r) => r.staffId))).sort(
+    (a, b) => (staffRank.get(a) ?? Infinity) - (staffRank.get(b) ?? Infinity)
+  );
   const colorOf = (staffId: string) => STAFF_COLORS[staffOrder.indexOf(staffId) % STAFF_COLORS.length];
 
   const memberSummary = staffOrder.map((staffId) => {

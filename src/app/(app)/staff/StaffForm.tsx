@@ -49,6 +49,20 @@ export function StaffForm({
       </div>
 
       <div className="flex flex-col gap-1">
+        <label className="text-sm font-medium text-slate-700">メンバー番号</label>
+        <input
+          name="member_no"
+          type="number"
+          min={1}
+          step={1}
+          defaultValue={profile?.member_no ?? ""}
+          placeholder={mode === "create" ? "空欄なら最後の番号になります" : ""}
+          className="rounded-md border border-slate-300 px-3 py-2 text-sm"
+        />
+        <p className="text-xs text-slate-400">案件設定では、番号の小さい順に上から並びます。</p>
+      </div>
+
+      <div className="flex flex-col gap-1">
         <label className="text-sm font-medium text-slate-700">所属・役職</label>
         <input
           name="position"
