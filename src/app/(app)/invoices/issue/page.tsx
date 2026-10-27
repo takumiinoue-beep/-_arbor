@@ -1,8 +1,8 @@
 import { requireAdmin } from "@/lib/auth";
 import { createClient } from "@/lib/supabase/server";
 import { fetchAllRows } from "@/lib/supabase/fetchAll";
-import { createRateResolver, type RateAssignment, type RateProject } from "@/lib/projects";
-import { acquisitionMonth } from "@/lib/sales";
+import { confirmedLines } from "@/lib/sales";
+import { fetchConfirmedRows } from "@/lib/confirmed";
 import type { Client, CompanyBankAccount, InvoiceIssued } from "@/types/database";
 import { InvoiceIssueClient, type BillableItem } from "./InvoiceIssueClient";
 
@@ -10,7 +10,7 @@ export default async function InvoiceIssuePage() {
   await requireAdmin();
   const supabase = await createClient();
 
-  const [{ data: clients }, { data: bankAccounts }, { data: settingsRows }, { data: invoicesRaw }, { data: projects }, { data: assignments }, acquisitions] =
+  const [{ data: clients }, { data: bankAccounts }, { data: settingsRows }, { data: invoicesRaw }, { data: projects }, confirmed, acquisitions] =
     await Promise.all([
       supabase.from("clients").select("*").order("name"),
       supabase.from("company_bank_accounts").select("*").order("id"),
@@ -20,8 +20,8 @@ export default async function InvoiceIssuePage() {
         .select("*, clients(name)")
         .eq("is_deleted", false)
         .order("date", { ascending: false }),
-      supabase.from("projects").select("id, name, start_date, effective_rate"),
-      supabase.from("project_assignments").select("month, staff_id, project_id, effective_rate"),
+      supabase.from("projects").select("id, name"),
+      fetchConfirmedRows(),
       fetchAllRows<{
         acquired_date: string;
         target_month: string | null;
@@ -39,20 +39,16 @@ export default async function InvoiceIssuePage() {
       ),
     ]);
 
-  // 請求書の明細候補：計上月 × 案件 × 単価ごとの有効件数（獲得件数×有効率）
-  const rateOf = createRateResolver((projects as RateProject[]) ?? [], (assignments as RateAssignment[]) ?? []);
+  // 請求書の明細候補：計上月 × 案件 × 単価ごとの有効件数（ダッシュボードで入力した件数を、OPをまとめて合計）
   const nameById = new Map((projects ?? []).map((p) => [p.id as string, p.name as string]));
   const grouped = new Map<string, { month: string; name: string; unitPrice: number; qty: number }>();
-  for (const a of acquisitions) {
-    const name = nameById.get(a.project_id);
-    if (!name) continue;
-    const month = acquisitionMonth(a);
-    const key = `${month}|${name}|${a.unit_price}`;
-    const cur = grouped.get(key) ?? { month, name, unitPrice: Number(a.unit_price), qty: 0 };
-    cur.qty += (a.quantity * rateOf(month, a.staff_id, a.project_id)) / 100;
+  for (const l of confirmedLines({ acquisitions, nameById, confirmed })) {
+    const key = `${l.month}|${l.projectName}|${l.unitPrice}`;
+    const cur = grouped.get(key) ?? { month: l.month, name: l.projectName, unitPrice: l.unitPrice, qty: 0 };
+    cur.qty += l.quantity;
     grouped.set(key, cur);
   }
-  const billableItems: BillableItem[] = Array.from(grouped, ([id, g]) => ({ ...g, id, qty: Math.round(g.qty) }))
+  const billableItems: BillableItem[] = Array.from(grouped, ([id, g]) => ({ ...g, id, qty: Math.round(g.qty * 100) / 100 }))
     .filter((g) => g.qty > 0)
     .sort((a, b) => b.month.localeCompare(a.month) || a.name.localeCompare(b.name, "ja") || b.unitPrice - a.unitPrice)
     .map((g) => ({

@@ -31,7 +31,7 @@ export type BillableItem = {
   description: string;
   label: string;
   unit_price: number;
-  confirmed_quantity: number; // 有効件数（獲得件数×有効率）
+  confirmed_quantity: number; // 有効件数（ダッシュボードで入力した件数）
   start_date: string; // 計上月の1日
 };
 

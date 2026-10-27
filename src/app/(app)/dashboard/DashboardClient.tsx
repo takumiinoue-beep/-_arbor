@@ -1,11 +1,11 @@
 "use client";
 
 import { Fragment, useMemo, useState, useTransition } from "react";
-import type { Acquisition, ConfirmedQuantity, Profile, ProjectAssignment } from "@/types/database";
+import type { Acquisition, Profile, ProjectAssignment } from "@/types/database";
 import { formatCurrency } from "@/lib/format";
 import { Progress } from "@/components/common/Progress";
 import { defaultUnitPrice, latestByName } from "@/lib/projects";
-import { acquisitionMonth } from "@/lib/sales";
+import { acquisitionMonth, type ConfirmedRow } from "@/lib/sales";
 import { AcquisitionButton, type AcquisitionProject } from "./AcquisitionButton";
 import { DeleteAcquisitionButton } from "./DeleteAcquisitionButton";
 import { setConfirmedQuantity } from "./actions";
@@ -76,7 +76,7 @@ function buildCells(args: {
   assignments: DashboardAssignment[]; // 表示する期間の案件設定
   nameById: Map<string, string>;
   staffName: Map<string, string>;
-  confirmed: ConfirmedQuantity[];
+  confirmed: ConfirmedRow[];
   defaultPriceByName: Map<string, number>; // 案件名 → デフォルト単価
 }): Cell[] {
   const { acquisitions, assignments, nameById, staffName, confirmed, defaultPriceByName } = args;
@@ -340,7 +340,7 @@ export function DashboardClient({
   assignments: DashboardAssignment[];
   staffList: Pick<Profile, "id" | "name">[];
   acquisitions: AcquisitionRow[];
-  confirmed: ConfirmedQuantity[];
+  confirmed: ConfirmedRow[];
   currentUserId: string;
   isAdmin: boolean;
   todayISO: string;

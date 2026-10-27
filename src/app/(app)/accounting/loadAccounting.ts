@@ -1,8 +1,8 @@
 import { createClient } from "@/lib/supabase/server";
 import { requireAdmin } from "@/lib/auth";
 import { fetchAllRows } from "@/lib/supabase/fetchAll";
-import { monthlyBilledByStaff, type SalesAcquisition } from "@/lib/sales";
-import { createRateResolver, type RateAssignment, type RateProject } from "@/lib/projects";
+import { confirmedLines, monthlyBilledByStaff, type SalesAcquisition } from "@/lib/sales";
+import { fetchConfirmedRows } from "@/lib/confirmed";
 import { buildActualInput, expenseOverlapFilter, fiscalMonths, fiscalRange } from "@/lib/accounting";
 import type { Expense, Member, PlActualEntry, PlPlanEntry, VendorInvoice } from "@/types/database";
 
@@ -22,7 +22,7 @@ export async function loadAccounting(fy: number) {
     { data: actualEntries },
     { data: staff },
     { data: projects },
-    { data: assignments },
+    confirmed,
   ] = await Promise.all([
     requireAdmin(),
     fetchAllRows<SalesAcquisition>((a, b) =>
@@ -43,15 +43,18 @@ export async function loadAccounting(fy: number) {
     supabase.from("pl_plan_entries").select("*").gte("plan_month", from).lt("plan_month", toExclusive),
     supabase.from("pl_actual_entries").select("*").gte("plan_month", from).lt("plan_month", toExclusive),
     supabase.from("profiles").select("id, name").order("name"),
-    supabase.from("projects").select("id, name, start_date, effective_rate"),
-    supabase.from("project_assignments").select("month, staff_id, project_id, effective_rate"),
+    supabase.from("projects").select("id, name"),
+    fetchConfirmedRows(),
   ]);
 
-  // 売上＝獲得金額 × 有効率（案件設定の有効率 → 無ければ案件一覧の有効率）
-  const salesByStaff = monthlyBilledByStaff({
-    acquisitions,
-    rateOf: createRateResolver((projects as RateProject[]) ?? [], (assignments as RateAssignment[]) ?? []),
-  });
+  // 売上＝確定金額（ダッシュボードで入力した単価ごとの有効件数 × 単価）
+  const salesByStaff = monthlyBilledByStaff(
+    confirmedLines({
+      acquisitions,
+      nameById: new Map((projects ?? []).map((p) => [p.id as string, p.name as string])),
+      confirmed,
+    })
+  );
   const staffList = (staff ?? []) as { id: string; name: string }[];
 
   const registered = {

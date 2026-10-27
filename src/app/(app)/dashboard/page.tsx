@@ -1,7 +1,8 @@
 import { requireProfile } from "@/lib/auth";
 import { createClient } from "@/lib/supabase/server";
 import { fetchAllRows } from "@/lib/supabase/fetchAll";
-import type { ConfirmedQuantity, Profile, ProjectAssignment } from "@/types/database";
+import { fetchConfirmedRows } from "@/lib/confirmed";
+import type { Profile, ProjectAssignment } from "@/types/database";
 import { DashboardClient, type AcquisitionRow } from "./DashboardClient";
 import type { AcquisitionProject } from "./AcquisitionButton";
 
@@ -34,15 +35,7 @@ export default async function DashboardPage() {
     supabase.from("project_assignments").select("id, month, staff_id, project_id, target_quantity"),
   ]);
 
-  // 有効件数。テーブルがまだ無い（マイグレーション未実行）ときも、ダッシュボードは開けるようにする
-  const confirmed = await fetchAllRows<ConfirmedQuantity>((from, to) =>
-    supabase
-      .from("confirmed_quantities")
-      .select("id, month, staff_id, project_name, unit_price, quantity")
-      .order("id")
-      .range(from, to)
-      .overrideTypes<ConfirmedQuantity[], { merge: false }>()
-  ).catch(() => [] as ConfirmedQuantity[]);
+  const confirmed = await fetchConfirmedRows();
 
   const todayISO = new Date().toISOString().slice(0, 10);
 
