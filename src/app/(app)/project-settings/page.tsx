@@ -1,7 +1,7 @@
 import { requireProfile } from "@/lib/auth";
 import { createClient } from "@/lib/supabase/server";
 import { fetchAllRows } from "@/lib/supabase/fetchAll";
-import type { ProjectAssignment, ProjectStatus } from "@/types/database";
+import type { ProjectAssignment } from "@/types/database";
 import { ProjectSettingsClient, type SettingsAcquisition, type SettingsProject } from "./ProjectSettingsClient";
 
 export default async function ProjectSettingsPage() {
@@ -9,7 +9,7 @@ export default async function ProjectSettingsPage() {
 
   const [profile, { data: projects }, { data: staffList }, { data: assignments }, acquisitions] = await Promise.all([
     requireProfile(),
-    supabase.from("projects").select("id, name, start_date, end_date, status, unit_price, price_rates(unit_price)"),
+    supabase.from("projects").select("id, name, start_date, status, unit_price, effective_rate, price_rates(unit_price)"),
     supabase.from("profiles").select("id, name").order("name"),
     supabase.from("project_assignments").select("*").order("sort_order"),
     fetchAllRows<SettingsAcquisition>((from, to) =>
@@ -28,7 +28,7 @@ export default async function ProjectSettingsPage() {
     <div className="flex flex-col gap-6">
       <h1 className="text-lg font-bold text-slate-900">案件設定</h1>
       <ProjectSettingsClient
-        projects={((projects ?? []) as unknown as (SettingsProject & { status: ProjectStatus })[]) ?? []}
+        projects={(projects ?? []) as unknown as SettingsProject[]}
         staffList={(staffList as { id: string; name: string }[]) ?? []}
         assignments={(assignments as ProjectAssignment[]) ?? []}
         acquisitions={acquisitions}

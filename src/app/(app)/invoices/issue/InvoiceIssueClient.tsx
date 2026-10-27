@@ -4,7 +4,7 @@ import { useMemo, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import Table, { type TableColumn } from "@/components/common/Table";
 import Modal from "@/components/common/Modal";
-import type { Client, CompanyBankAccount, CompanySettings, InvoiceIssued, PriceRate } from "@/types/database";
+import type { Client, CompanyBankAccount, CompanySettings, InvoiceIssued } from "@/types/database";
 import {
   saveInvoice,
   deleteInvoiceAction,
@@ -26,55 +26,14 @@ import {
 
 type InvoiceRow = InvoiceIssued & { client_name: string | null };
 
-type ProjectOption = {
-  id: string;
-  name: string;
-  unit_price: number;
-  confirmed_quantity: number;
-  start_date: string;
-  price_rates?: PriceRate[];
-};
-
-type BillableItem = {
+export type BillableItem = {
   id: string;
   description: string;
   label: string;
   unit_price: number;
-  confirmed_quantity: number;
-  start_date: string;
+  confirmed_quantity: number; // 有効件数（獲得件数×有効率）
+  start_date: string; // 計上月の1日
 };
-
-// 案件から請求書の明細候補を作る。料金表がある案件は行ごとの確定件数・単価が
-// 違うため、行ごとに明細候補を分ける（料金表が無い案件は案件本体の確定件数）。
-function toBillableItems(projects: ProjectOption[]): BillableItem[] {
-  const result: BillableItem[] = [];
-  for (const p of projects) {
-    if (p.price_rates && p.price_rates.length > 0) {
-      for (const r of p.price_rates) {
-        if (r.confirmed_quantity <= 0) continue;
-        const description = r.position ? `${p.name}（${r.position}）` : p.name;
-        result.push({
-          id: `${p.id}:${r.id}`,
-          description,
-          label: `${description}（確定 ${r.confirmed_quantity}件 × ¥${r.unit_price.toLocaleString("ja-JP")}）`,
-          unit_price: r.unit_price,
-          confirmed_quantity: r.confirmed_quantity,
-          start_date: p.start_date,
-        });
-      }
-    } else if (p.confirmed_quantity > 0) {
-      result.push({
-        id: p.id,
-        description: p.name,
-        label: `${p.name}（確定 ${p.confirmed_quantity}件 × ¥${p.unit_price.toLocaleString("ja-JP")}）`,
-        unit_price: p.unit_price,
-        confirmed_quantity: p.confirmed_quantity,
-        start_date: p.start_date,
-      });
-    }
-  }
-  return result;
-}
 
 function billableItemToInvoiceItem(item: BillableItem): InvoiceItemForm {
   return {
@@ -91,13 +50,13 @@ export function InvoiceIssueClient({
   companyBankAccounts,
   company,
   invoices,
-  projects,
+  billableItems,
 }: {
   clients: Client[];
   companyBankAccounts: CompanyBankAccount[];
   company: CompanySettings | null;
   invoices: InvoiceRow[];
-  projects: ProjectOption[];
+  billableItems: BillableItem[];
 }) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
@@ -110,8 +69,6 @@ export function InvoiceIssueClient({
   const [statusModal, setStatusModal] = useState<InvoiceRow | null>(null);
   const [selectedProjectId, setSelectedProjectId] = useState("");
   const [selectedMonth, setSelectedMonth] = useState("");
-
-  const billableItems = useMemo(() => toBillableItems(projects), [projects]);
 
   const projectMonths = useMemo(() => {
     const set = new Set(billableItems.map((p) => p.start_date.slice(0, 7)));

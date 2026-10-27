@@ -3,7 +3,7 @@
 import { Fragment, useMemo, useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { formatCurrency } from "@/lib/format";
-import { pickVersion } from "@/lib/projectMonths";
+import { defaultUnitPrice, latestByName } from "@/lib/projects";
 import { acquisitionMonth } from "@/lib/sales";
 import type { ProjectAssignment } from "@/types/database";
 import { saveProjectAssignments } from "./actions";
@@ -12,8 +12,9 @@ export type SettingsProject = {
   id: string;
   name: string;
   start_date: string;
-  end_date: string | null;
+  status: string;
   unit_price: number;
+  effective_rate: number;
   price_rates: { unit_price: number }[] | null;
 };
 
@@ -42,14 +43,6 @@ const STAFF_COLORS = [
 
 const num = (v: string) => (v.trim() === "" ? 0 : Number(v));
 const pct = (v: number) => `${(Math.round(v * 100) / 100).toFixed(2)}%`;
-
-// 案件の単価：料金表があればその平均、無ければ案件の単価
-function unitPriceOf(p: SettingsProject | undefined): number {
-  if (!p) return 0;
-  const rates = p.price_rates ?? [];
-  if (rates.length > 0) return Math.round(rates.reduce((s, r) => s + Number(r.unit_price), 0) / rates.length);
-  return Number(p.unit_price);
-}
 
 let rowSeq = 0;
 const newRow = (staffId: string, projectId = "", target = "0", rate = "100", memo = ""): Row => ({
@@ -87,20 +80,38 @@ export function ProjectSettingsClient({
   const [message, setMessage] = useState<{ type: "ok" | "error"; text: string } | null>(null);
   const [dirty, setDirty] = useState(false);
 
-  // 月ごとの行（保存前の編集内容も月ごとに保持）
+  // 案件は案件名ごとに1つ（過去に月ごとに作った同名の案件は、一番新しいものを使う）
+  const masterByName = useMemo(() => latestByName(projects), [projects]);
+  const projectById = useMemo(() => new Map(projects.map((p) => [p.id, p])), [projects]);
+
+  // 月ごとの行（保存前の編集内容も月ごとに保持）。
+  // 案件設定が無いのに獲得が登録されているメンバー×案件は、件数0の行として自動で並べる（現在件数を見えるようにするため）
   const initialByMonth = useMemo(() => {
     const map = new Map<string, Row[]>();
+    const seen = new Set<string>();
     for (const a of assignments) {
       const m = a.month.slice(0, 7);
+      const name = projectById.get(a.project_id)?.name;
+      if (name) seen.add(`${m}|${a.staff_id}|${name}`);
       map.set(m, [
         ...(map.get(m) ?? []),
         newRow(a.staff_id, a.project_id, String(a.target_quantity), String(Number(a.effective_rate)), a.memo ?? ""),
       ]);
     }
+    for (const a of acquisitions) {
+      const m = acquisitionMonth(a);
+      const name = projectById.get(a.project_id)?.name;
+      const master = name ? masterByName.get(name) : undefined;
+      if (!name || !master) continue;
+      const key = `${m}|${a.staff_id}|${name}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      map.set(m, [...(map.get(m) ?? []), newRow(a.staff_id, master.id, "0", String(Number(master.effective_rate)))]);
+    }
     return map;
-  }, [assignments]);
+  }, [assignments, acquisitions, projectById, masterByName]);
   const [rowsByMonth, setRowsByMonth] = useState<Map<string, Row[]>>(initialByMonth);
-  const rows = rowsByMonth.get(month) ?? [];
+  const rows = useMemo(() => rowsByMonth.get(month) ?? [], [rowsByMonth, month]);
 
   function setRows(updater: (prev: Row[]) => Row[]) {
     setRowsByMonth((prev) => {
@@ -128,28 +139,17 @@ export function ProjectSettingsClient({
     setMessage(null);
   }
 
-  // 案件名ごとの案件（月ごとに作られている）と、その月に使う案件
-  const versionsByName = useMemo(() => {
-    const map = new Map<string, SettingsProject[]>();
-    for (const p of projects) map.set(p.name, [...(map.get(p.name) ?? []), p]);
-    return map;
-  }, [projects]);
-  const projectNames = useMemo(
-    () => Array.from(versionsByName.keys()).sort((a, b) => a.localeCompare(b, "ja")),
-    [versionsByName]
-  );
-  const projectById = useMemo(() => new Map(projects.map((p) => [p.id, p])), [projects]);
+  // 選べる案件：進行中の案件（すでに設定に入っている案件は、完了していても選択肢に残す）
   const staffName = useMemo(() => new Map(staffList.map((s) => [s.id, s.name])), [staffList]);
-
-  // 案件ごとの、これまでに使った有効率（新しい行の初期値にする）
-  const lastRateByName = useMemo(() => {
-    const map = new Map<string, string>();
-    for (const a of assignments) {
-      const name = projectById.get(a.project_id)?.name;
-      if (name) map.set(name, String(Number(a.effective_rate)));
+  const projectNames = useMemo(() => {
+    const names = new Set<string>();
+    for (const [name, p] of masterByName) if (p.status === "進行中") names.add(name);
+    for (const r of rows) {
+      const name = projectById.get(r.projectId)?.name;
+      if (name) names.add(name);
     }
-    return map;
-  }, [assignments, projectById]);
+    return Array.from(names).sort((a, b) => a.localeCompare(b, "ja"));
+  }, [masterByName, rows, projectById]);
 
   // その月の現在件数・獲得金額：メンバー × 案件名
   const acquired = useMemo(() => {
@@ -172,7 +172,7 @@ export function ProjectSettingsClient({
     const project = projectById.get(r.projectId);
     const target = num(r.target);
     const rate = num(r.rate);
-    const unit = unitPriceOf(project);
+    const unit = project ? defaultUnitPrice(masterByName.get(project.name) ?? project) : 0;
     const got = project ? (acquired.get(`${r.staffId}|${project.name}`) ?? { qty: 0, amount: 0 }) : { qty: 0, amount: 0 };
     return {
       project,
@@ -225,11 +225,10 @@ export function ProjectSettingsClient({
   const update = (key: number, patch: Partial<Row>) =>
     setRows((prev) => prev.map((r) => (r.key === key ? { ...r, ...patch } : r)));
 
+  // 案件を選ぶと、案件一覧のデフォルトの有効率が入る（このあと行ごとに変えられる）
   function selectProject(key: number, name: string) {
-    const version = pickVersion(versionsByName.get(name) ?? [], month);
-    const row = rows.find((r) => r.key === key);
-    const rate = row && row.projectId === "" ? (lastRateByName.get(name) ?? row.rate) : row?.rate;
-    update(key, { projectId: version?.id ?? "", ...(rate !== undefined ? { rate } : {}) });
+    const master = masterByName.get(name);
+    update(key, master ? { projectId: master.id, rate: String(Number(master.effective_rate)) } : { projectId: "" });
   }
 
   const addRowFor = (staffId: string) => setRows((prev) => {
@@ -256,7 +255,8 @@ export function ProjectSettingsClient({
         month,
         rows.map((r) => ({
           staffId: r.staffId,
-          projectId: r.projectId,
+          // 過去に月ごとに作った同名の案件は、現在の案件にそろえて保存する
+          projectId: masterByName.get(projectById.get(r.projectId)?.name ?? "")?.id ?? r.projectId,
           target: num(r.target),
           rate: num(r.rate),
           memo: r.memo,
@@ -297,9 +297,9 @@ export function ProjectSettingsClient({
 
       <div className="flex flex-wrap items-center justify-between gap-3">
         <p className="text-xs text-slate-500">
-          案件一覧に登録した案件と、登録したメンバーを選んで、{monthText(month)}にやる件数と有効率を設定します。
-          現在件数は案件獲得の登録から自動で入ります。見込請求金額＝件数×単価×有効率、請求金額＝獲得金額×有効率です。
-          単価は、料金表のある案件では料金表の平均です。
+          案件一覧に登録した案件と、登録したメンバーを選んで、{monthText(month)}にやる件数を設定します。
+          有効率は案件一覧の値が入り、行ごとに変えられます。現在件数は、ダッシュボードの案件獲得の登録から自動で入ります。
+          見込請求金額＝件数×単価（案件一覧のデフォルトの単価）×有効率、請求金額＝獲得金額×有効率です。
         </p>
         {isAdmin && (
           <div className="flex items-center gap-3">
@@ -385,10 +385,10 @@ export function ProjectSettingsClient({
                       <td className="border-l border-slate-200 px-3 py-1.5 text-right">{c.project ? `${c.current}件` : ""}</td>
                       <td
                         className={`border-l border-slate-200 px-3 py-1.5 text-right ${
-                          c.project && c.remaining < 0 ? "text-red-600" : ""
+                          c.project && c.target > 0 && c.remaining < 0 ? "text-red-600" : ""
                         }`}
                       >
-                        {c.project ? `${c.remaining}件` : ""}
+                        {c.project ? (c.target > 0 ? `${c.remaining}件` : "-") : ""}
                       </td>
                       <td className="border-l border-slate-200 px-3 py-1.5 text-right">
                         {c.project ? (c.progress === null ? "-" : pct(c.progress)) : ""}

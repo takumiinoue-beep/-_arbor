@@ -17,6 +17,7 @@ export type Project = {
   start_date: string;
   end_date: string | null;
   unit_price: number;
+  effective_rate: number;
   quantity: number;
   budget: number;
   actual_quantity: number;

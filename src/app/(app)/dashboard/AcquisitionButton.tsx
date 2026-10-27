@@ -6,21 +6,20 @@ import Modal from "@/components/common/Modal";
 import type { PriceRate, Profile, Project } from "@/types/database";
 import { formatCurrency } from "@/lib/format";
 import { formatYearMonth } from "@/lib/period";
-import { needsMonthlyCopy, pickVersion } from "@/lib/projectMonths";
+import { defaultUnitPrice, latestByName } from "@/lib/projects";
 import { createAcquisition } from "./actions";
 
 function toToday(): string {
   return new Date().toISOString().slice(0, 10);
 }
 
-export type AcquisitionProject = Pick<Project, "id" | "name" | "start_date" | "end_date" | "status" | "unit_price"> & {
+export type AcquisitionProject = Pick<Project, "id" | "name" | "start_date" | "status" | "unit_price" | "effective_rate"> & {
   price_rates?: Pick<PriceRate, "id" | "position" | "employee_min" | "employee_max" | "unit_price">[];
 };
 
 type Row = {
   projectName: string;
   targetMonth: string; // 計上月（空なら日付の月）。来月のアポなどは行ごとに来月を選ぶ
-  versionId: string; // 同じ案件名が複数ある場合に、期間を手動で選んだときのID（空なら計上月から自動で選ぶ）
   position: string;
   employeeCount: string;
   quantity: string;
@@ -32,7 +31,7 @@ type Block = { id: number; staffId: string; rows: Row[] };
 let blockSeq = 0;
 const makeBlock = (staffId: string): Block => ({ id: ++blockSeq, staffId, rows: [{ ...emptyRow }] });
 
-const emptyRow: Row = { projectName: "", targetMonth: "", versionId: "", position: "", employeeCount: "", quantity: "1" };
+const emptyRow: Row = { projectName: "", targetMonth: "", position: "", employeeCount: "", quantity: "1" };
 
 function findMatchingRate(project: AcquisitionProject | undefined, position: string, employeeCount: number | null) {
   if (!project?.price_rates || !position || employeeCount === null || Number.isNaN(employeeCount)) {
@@ -44,21 +43,42 @@ function findMatchingRate(project: AcquisitionProject | undefined, position: str
   });
 }
 
-const ym = (date: string) => date.slice(0, 7);
-
-function versionLabel(p: AcquisitionProject): string {
-  const start = formatYearMonth(ym(p.start_date));
-  return p.end_date && ym(p.end_date) !== ym(p.start_date) ? `${start}〜${formatYearMonth(ym(p.end_date))}` : start;
+// 案件設定との連携の表示：そのOP・月・案件に設定した件数と、登録後の現在件数
+function ProgressHint({
+  info,
+  quantity,
+  month,
+}: {
+  info: { target: number; current: number } | undefined;
+  quantity: number;
+  month: string;
+}) {
+  if (!info) {
+    return (
+      <p className="text-xs text-amber-600">
+        {formatYearMonth(month)}の案件設定にこのOPの設定はありません（登録すると案件設定に「件数0」で表示されます）。
+      </p>
+    );
+  }
+  const after = info.current + quantity;
+  return (
+    <p className="text-xs text-emerald-700">
+      案件設定：{info.target}件中 {info.current}件 → 登録後 {after}件（残り{info.target - after}件）
+    </p>
+  );
 }
 
 export function AcquisitionButton({
   projects,
   staffList,
   currentUserId,
+  progress,
 }: {
   projects: AcquisitionProject[];
   staffList: Pick<Profile, "id" | "name">[];
   currentUserId: string;
+  // 案件設定の件数と現在件数。キーは「月|OPのID|案件名」
+  progress: Map<string, { target: number; current: number }>;
 }) {
   const [open, setOpen] = useState(false);
   const [state, formAction, pending] = useActionState(createAcquisition, null);
@@ -78,15 +98,15 @@ export function AcquisitionButton({
     wasPending.current = pending;
   }, [pending, state, router, currentUserId]);
 
-  // 案件は月ごとに作られていて同じ名前が複数あるため、まず案件名だけを選び、期間は計上月から自動で決める
-  const versionsByName = useMemo(() => {
-    const map = new Map<string, AcquisitionProject[]>();
-    for (const p of projects) map.set(p.name, [...(map.get(p.name) ?? []), p]);
-    return map;
-  }, [projects]);
+  // 案件名ごとに1つの案件（過去に月ごとに作った同名の案件は、一番新しいものを使う）。選べるのは進行中の案件だけ
+  const projectByName = useMemo(() => latestByName(projects), [projects]);
   const projectNames = useMemo(
-    () => Array.from(versionsByName.keys()).sort((a, b) => a.localeCompare(b, "ja")),
-    [versionsByName]
+    () =>
+      Array.from(projectByName.values())
+        .filter((p) => p.status === "進行中")
+        .map((p) => p.name)
+        .sort((a, b) => a.localeCompare(b, "ja")),
+    [projectByName]
   );
 
   function updateBlock(blockId: number, patch: Partial<Block>) {
@@ -99,8 +119,7 @@ export function AcquisitionButton({
         if (b.id !== blockId) return b;
         const rows = [...b.rows];
         rows[idx] = { ...rows[idx], [field]: value };
-        if (field === "projectName") rows[idx].versionId = "";
-        if (field === "projectName" || field === "versionId" || field === "targetMonth") {
+        if (field === "projectName") {
           rows[idx].position = "";
           rows[idx].employeeCount = "";
         }
@@ -133,17 +152,17 @@ export function AcquisitionButton({
 
   function resolveRow(row: Row) {
     const month = row.targetMonth || dateMonth;
-    const versions = versionsByName.get(row.projectName) ?? [];
-    const project =
-      versions.find((p) => p.id === row.versionId) ?? (versions.length ? pickVersion(versions, month) : undefined);
+    const project = projectByName.get(row.projectName);
     const hasRates = (project?.price_rates?.length ?? 0) > 0;
     const positionOptions = Array.from(new Set(project?.price_rates?.map((r) => r.position) ?? []));
     const employeeCountNum = row.employeeCount === "" ? null : Number(row.employeeCount);
     const matchedRate = hasRates ? findMatchingRate(project, row.position, employeeCountNum) : undefined;
-    const unitPrice = hasRates ? (matchedRate?.unit_price ?? null) : (project?.unit_price ?? null);
+    // 料金表に当てはまる行があればその単価、無ければデフォルトの単価
+    const fallbackPrice = project ? defaultUnitPrice(project) : 0;
+    const unitPrice = matchedRate ? Number(matchedRate.unit_price) : fallbackPrice > 0 ? fallbackPrice : null;
     const quantityNum = Number(row.quantity) || 0;
     const quantityValid = Number.isInteger(quantityNum) && quantityNum >= 1;
-    return { month, project, versions, hasRates, positionOptions, matchedRate, unitPrice, quantityNum, quantityValid };
+    return { month, project, hasRates, positionOptions, matchedRate, unitPrice, quantityNum, quantityValid };
   }
 
   const resolvedBlocks = blocks.map((b) => ({ block: b, rows: b.rows.map(resolveRow) }));
@@ -291,32 +310,6 @@ export function AcquisitionButton({
                         onChange={(e) => updateRow(block.id, idx, "targetMonth", e.target.value)}
                         className="rounded-md border border-slate-300 px-2 py-1 text-xs focus:border-slate-500 focus:outline-none"
                       />
-                      {resolved.project && (
-                        <span className="rounded-full bg-slate-100 px-2 py-0.5 font-medium text-slate-600">
-                          {versionLabel(resolved.project)}
-                        </span>
-                      )}
-                      {resolved.project && needsMonthlyCopy(resolved.project, resolved.month) && (
-                        <span className="text-emerald-700">
-                          {formatYearMonth(resolved.month)}の案件を自動で作成して登録します
-                        </span>
-                      )}
-                      {resolved.versions.length > 1 && resolved.project && (
-                        <select
-                          value={resolved.project.id}
-                          onChange={(e) => updateRow(block.id, idx, "versionId", e.target.value)}
-                          className="rounded-md border border-slate-200 px-1.5 py-0.5 text-xs text-slate-600 focus:border-slate-500 focus:outline-none"
-                          aria-label="案件の期間"
-                        >
-                          {[...resolved.versions]
-                            .sort((a, b) => b.start_date.localeCompare(a.start_date))
-                            .map((v) => (
-                              <option key={v.id} value={v.id}>
-                                {versionLabel(v)}
-                              </option>
-                            ))}
-                        </select>
-                      )}
                     </div>
 
                     {resolved.hasRates && (
@@ -352,10 +345,22 @@ export function AcquisitionButton({
                       <span className="font-semibold text-slate-700">
                         {resolved.unitPrice !== null ? formatCurrency(resolved.unitPrice) : "未確定"}
                       </span>
-                      {resolved.hasRates && resolved.unitPrice === null && row.projectName && (
-                        <span className="ml-2 text-red-600">役職・従業員数に該当する料金表がありません。</span>
+                      {resolved.unitPrice !== null && resolved.hasRates && (
+                        <span className="ml-1">
+                          {resolved.matchedRate ? "（料金表）" : "（デフォルト単価。役職・従業員数が料金表に当てはまりません）"}
+                        </span>
+                      )}
+                      {resolved.unitPrice === null && row.projectName && (
+                        <span className="ml-2 text-red-600">単価が決まりません。案件一覧でデフォルトの単価を設定してください。</span>
                       )}
                     </p>
+                    {resolved.project && block.staffId && (
+                      <ProgressHint
+                        info={progress.get(`${resolved.month}|${block.staffId}|${resolved.project.name}`)}
+                        quantity={resolved.quantityValid ? resolved.quantityNum : 0}
+                        month={resolved.month}
+                      />
+                    )}
                   </div>
                 );
               })}
@@ -381,7 +386,7 @@ export function AcquisitionButton({
             合計金額：
             <span className="ml-1 font-semibold text-slate-900">{formatCurrency(totalAmount)}</span>
             <span className="ml-1 text-xs text-slate-400">
-              ※ 登録すると各案件の実績件数にもそれぞれの件数が加算されます。
+              ※ 登録した件数は、案件設定の現在件数に反映されます。
             </span>
           </div>
 

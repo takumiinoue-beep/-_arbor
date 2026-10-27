@@ -1,13 +1,16 @@
 import { requireAdmin } from "@/lib/auth";
 import { createClient } from "@/lib/supabase/server";
+import { fetchAllRows } from "@/lib/supabase/fetchAll";
+import { createRateResolver, type RateAssignment, type RateProject } from "@/lib/projects";
+import { acquisitionMonth } from "@/lib/sales";
 import type { Client, CompanyBankAccount, InvoiceIssued } from "@/types/database";
-import { InvoiceIssueClient } from "./InvoiceIssueClient";
+import { InvoiceIssueClient, type BillableItem } from "./InvoiceIssueClient";
 
 export default async function InvoiceIssuePage() {
   await requireAdmin();
   const supabase = await createClient();
 
-  const [{ data: clients }, { data: bankAccounts }, { data: settingsRows }, { data: invoicesRaw }, { data: projects }] =
+  const [{ data: clients }, { data: bankAccounts }, { data: settingsRows }, { data: invoicesRaw }, { data: projects }, { data: assignments }, acquisitions] =
     await Promise.all([
       supabase.from("clients").select("*").order("name"),
       supabase.from("company_bank_accounts").select("*").order("id"),
@@ -17,11 +20,49 @@ export default async function InvoiceIssuePage() {
         .select("*, clients(name)")
         .eq("is_deleted", false)
         .order("date", { ascending: false }),
-      supabase
-        .from("projects")
-        .select("id, name, unit_price, confirmed_quantity, start_date, price_rates(*)")
-        .order("start_date", { ascending: false }),
+      supabase.from("projects").select("id, name, start_date, effective_rate"),
+      supabase.from("project_assignments").select("month, staff_id, project_id, effective_rate"),
+      fetchAllRows<{
+        acquired_date: string;
+        target_month: string | null;
+        project_id: string;
+        staff_id: string;
+        quantity: number;
+        unit_price: number;
+      }>((from, to) =>
+        supabase
+          .from("acquisitions")
+          .select("acquired_date, target_month, project_id, staff_id, quantity, unit_price")
+          .order("acquired_date")
+          .order("id")
+          .range(from, to)
+      ),
     ]);
+
+  // 請求書の明細候補：計上月 × 案件 × 単価ごとの有効件数（獲得件数×有効率）
+  const rateOf = createRateResolver((projects as RateProject[]) ?? [], (assignments as RateAssignment[]) ?? []);
+  const nameById = new Map((projects ?? []).map((p) => [p.id as string, p.name as string]));
+  const grouped = new Map<string, { month: string; name: string; unitPrice: number; qty: number }>();
+  for (const a of acquisitions) {
+    const name = nameById.get(a.project_id);
+    if (!name) continue;
+    const month = acquisitionMonth(a);
+    const key = `${month}|${name}|${a.unit_price}`;
+    const cur = grouped.get(key) ?? { month, name, unitPrice: Number(a.unit_price), qty: 0 };
+    cur.qty += (a.quantity * rateOf(month, a.staff_id, a.project_id)) / 100;
+    grouped.set(key, cur);
+  }
+  const billableItems: BillableItem[] = Array.from(grouped, ([id, g]) => ({ ...g, id, qty: Math.round(g.qty) }))
+    .filter((g) => g.qty > 0)
+    .sort((a, b) => b.month.localeCompare(a.month) || a.name.localeCompare(b.name, "ja") || b.unitPrice - a.unitPrice)
+    .map((g) => ({
+      id: g.id,
+      description: g.name,
+      label: `${Number(g.month.slice(5, 7))}月 ${g.name}（有効 ${g.qty}件 × ¥${g.unitPrice.toLocaleString("ja-JP")}）`,
+      unit_price: g.unitPrice,
+      confirmed_quantity: g.qty,
+      start_date: `${g.month}-01`,
+    }));
 
   const invoices = (invoicesRaw ?? []).map((row) => {
     const { clients: clientRelation, ...rest } = row as InvoiceIssued & { clients: { name: string } | null };
@@ -34,7 +75,7 @@ export default async function InvoiceIssuePage() {
       companyBankAccounts={(bankAccounts as CompanyBankAccount[]) ?? []}
       company={settingsRows?.[0] ?? null}
       invoices={invoices}
-      projects={projects ?? []}
+      billableItems={billableItems}
     />
   );
 }

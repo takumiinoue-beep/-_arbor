@@ -2,9 +2,12 @@
 
 import { Fragment, useMemo, useState } from "react";
 import Link from "next/link";
-import type { PriceRate, Profile, ProjectStatus, ProjectWithStaff } from "@/types/database";
+import type { PriceRate, Project, ProjectStatus } from "@/types/database";
 import { formatCurrency } from "@/lib/format";
+import { latestByName } from "@/lib/projects";
 import { DeleteProjectButton } from "./DeleteProjectButton";
+
+type ProjectRow = Project & { price_rates: PriceRate[] };
 
 function rateRangeLabel(rate: PriceRate) {
   return rate.employee_max === null
@@ -12,30 +15,12 @@ function rateRangeLabel(rate: PriceRate) {
     : `${rate.employee_min}〜${rate.employee_max}人`;
 }
 
-function sortedRates(rates: PriceRate[] | undefined) {
-  if (!rates) return [];
-  return [...rates].sort((a, b) => a.sort_order - b.sort_order);
-}
-
 // 進行中を上、完了を下に表示する（中止はその間）
 const STATUS_ORDER: Record<ProjectStatus, number> = { 進行中: 0, 中止: 1, 完了: 2 };
 
-export function ProjectsClient({
-  projects,
-  staffList,
-  isAdmin,
-  todayISO,
-}: {
-  projects: ProjectWithStaff[];
-  staffList: Profile[];
-  isAdmin: boolean;
-  todayISO: string;
-}) {
-  const currentMonthKey = todayISO.slice(0, 7);
+export function ProjectsClient({ projects, isAdmin }: { projects: ProjectRow[]; isAdmin: boolean }) {
   const [keyword, setKeyword] = useState("");
-  const [staffId, setStaffId] = useState("");
   const [status, setStatus] = useState<ProjectStatus | "">("");
-  const [monthTab, setMonthTab] = useState(currentMonthKey);
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
 
   function toggleExpanded(id: string) {
@@ -47,65 +32,23 @@ export function ProjectsClient({
     });
   }
 
-  const monthTabs = useMemo(() => {
-    const set = new Set(projects.map((p) => p.start_date.slice(0, 7)));
-    set.add(currentMonthKey);
-    return Array.from(set).sort();
-  }, [projects, currentMonthKey]);
-
-  // 複数年にまたがる場合のみ「2026年7月」のように年を併記して曖昧さを避ける
-  const spansMultipleYears = useMemo(
-    () => new Set(monthTabs.map((m) => m.slice(0, 4))).size > 1,
-    [monthTabs]
+  // 案件名ごとに1行（以前は月ごとに同じ名前の案件を作っていたため、一番新しいものを表示する）
+  const rows = useMemo(
+    () =>
+      Array.from(latestByName(projects).values())
+        .filter((p) => {
+          if (keyword && !p.name.toLowerCase().includes(keyword.toLowerCase())) return false;
+          if (status && p.status !== status) return false;
+          return true;
+        })
+        .sort(
+          (a, b) => STATUS_ORDER[a.status] - STATUS_ORDER[b.status] || a.name.localeCompare(b.name, "ja")
+        ),
+    [projects, keyword, status]
   );
-
-  const filtered = useMemo(() => {
-    return projects
-      .filter((p) => {
-        if (keyword) {
-          const k = keyword.toLowerCase();
-          const hit =
-            p.name.toLowerCase().includes(k) || (p.staff?.name ?? "").toLowerCase().includes(k);
-          if (!hit) return false;
-        }
-        if (staffId && p.staff_id !== staffId) return false;
-        if (status && p.status !== status) return false;
-        if (monthTab !== "all" && p.start_date.slice(0, 7) !== monthTab) return false;
-        return true;
-      })
-      .sort((a, b) => STATUS_ORDER[a.status] - STATUS_ORDER[b.status]);
-  }, [projects, keyword, staffId, status, monthTab]);
 
   return (
     <div className="flex flex-col gap-4">
-      <div className="flex flex-wrap gap-1 border-b border-slate-200">
-        <button
-          type="button"
-          onClick={() => setMonthTab("all")}
-          className={`-mb-px border-b-2 px-4 py-2 text-sm font-medium ${
-            monthTab === "all"
-              ? "border-slate-900 text-slate-900"
-              : "border-transparent text-slate-500 hover:text-slate-700"
-          }`}
-        >
-          全て
-        </button>
-        {monthTabs.map((m) => (
-          <button
-            key={m}
-            type="button"
-            onClick={() => setMonthTab(m)}
-            className={`-mb-px border-b-2 px-4 py-2 text-sm font-medium whitespace-nowrap ${
-              monthTab === m
-                ? "border-slate-900 text-slate-900"
-                : "border-transparent text-slate-500 hover:text-slate-700"
-            }`}
-          >
-            {spansMultipleYears ? `${m.slice(0, 4)}年${Number(m.slice(5, 7))}月` : `${Number(m.slice(5, 7))}月`}
-          </button>
-        ))}
-      </div>
-
       <div className="flex flex-wrap items-end justify-between gap-4">
         <div className="flex flex-wrap items-end gap-3">
           <div className="flex flex-col gap-1">
@@ -113,24 +56,9 @@ export function ProjectsClient({
             <input
               value={keyword}
               onChange={(e) => setKeyword(e.target.value)}
-              placeholder="案件名・担当者名"
+              placeholder="案件名"
               className="w-48 rounded-md border border-slate-300 px-3 py-1.5 text-sm"
             />
-          </div>
-          <div className="flex flex-col gap-1">
-            <label className="text-xs font-medium text-slate-500">担当者</label>
-            <select
-              value={staffId}
-              onChange={(e) => setStaffId(e.target.value)}
-              className="rounded-md border border-slate-300 px-3 py-1.5 text-sm"
-            >
-              <option value="">すべて</option>
-              {staffList.map((s) => (
-                <option key={s.id} value={s.id}>
-                  {s.name}
-                </option>
-              ))}
-            </select>
           </div>
           <div className="flex flex-col gap-1">
             <label className="text-xs font-medium text-slate-500">ステータス</label>
@@ -162,46 +90,38 @@ export function ProjectsClient({
           <thead className="bg-slate-50">
             <tr>
               <th className="px-3 py-2 text-left font-medium text-slate-500">案件名</th>
-              <th className="px-3 py-2 text-left font-medium text-slate-500">担当者</th>
-              <th className="px-3 py-2 text-left font-medium text-slate-500">期間</th>
-              <th className="px-3 py-2 text-right font-medium text-slate-500">単価</th>
+              <th className="px-3 py-2 text-right font-medium text-slate-500">デフォルト単価</th>
+              <th className="px-3 py-2 text-right font-medium text-slate-500">有効率</th>
               <th className="px-3 py-2 text-left font-medium text-slate-500">ステータス</th>
-              <th className="px-3 py-2 text-left font-medium text-slate-500">備考</th>
-              <th className="px-3 py-2 text-left font-medium text-slate-500">操作</th>
+              {isAdmin && <th className="px-3 py-2 text-left font-medium text-slate-500">操作</th>}
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-100">
-            {filtered.map((p) => {
-              const rates = sortedRates(p.price_rates);
-              const hasRates = rates.length > 0;
-              const prices = rates.map((r) => r.unit_price);
-              const unitText = hasRates
-                ? Math.min(...prices) === Math.max(...prices)
-                  ? formatCurrency(prices[0])
-                  : `${formatCurrency(Math.min(...prices))}〜${formatCurrency(Math.max(...prices))}`
-                : formatCurrency(p.unit_price);
+            {rows.map((p) => {
+              const rates = [...p.price_rates].sort((a, b) => a.sort_order - b.sort_order);
               return (
                 <Fragment key={p.id}>
                   <tr className="hover:bg-slate-50">
                     <td className="px-3 py-2 font-medium text-slate-800">
-                      {hasRates && (
+                      {rates.length > 0 ? (
                         <button
                           type="button"
                           onClick={() => toggleExpanded(p.id)}
-                          className="mr-1.5 inline-block w-3 text-xs text-slate-400 hover:text-slate-700"
-                          aria-label={expanded.has(p.id) ? "料金表の内訳を閉じる" : "料金表の内訳を開く"}
+                          className="flex items-center gap-1.5 text-left hover:text-slate-900"
+                          aria-label={expanded.has(p.id) ? "料金表を閉じる" : "料金表を開く"}
                         >
-                          {expanded.has(p.id) ? "▼" : "▶"}
+                          <span className="inline-block w-3 text-xs text-slate-400">
+                            {expanded.has(p.id) ? "▼" : "▶"}
+                          </span>
+                          {p.name}
+                          <span className="text-xs font-normal text-slate-400">料金表 {rates.length}件</span>
                         </button>
+                      ) : (
+                        <span className="pl-4">{p.name}</span>
                       )}
-                      {p.name}
                     </td>
-                    <td className="px-3 py-2 text-slate-600">{p.staff?.name ?? "-"}</td>
-                    <td className="px-3 py-2 whitespace-nowrap text-slate-600">
-                      {p.start_date}
-                      {p.end_date ? ` ～ ${p.end_date}` : ""}
-                    </td>
-                    <td className="px-3 py-2 text-right text-slate-700">{unitText}</td>
+                    <td className="px-3 py-2 text-right text-slate-700">{formatCurrency(Number(p.unit_price))}</td>
+                    <td className="px-3 py-2 text-right text-slate-700">{Number(p.effective_rate)}%</td>
                     <td className="px-3 py-2">
                       <span
                         className={`rounded-full px-2 py-0.5 text-xs ${
@@ -215,40 +135,33 @@ export function ProjectsClient({
                         {p.status}
                       </span>
                     </td>
-                    <td className="max-w-[240px] truncate px-3 py-2 text-slate-500" title={p.notes ?? ""}>
-                      {p.notes ?? ""}
-                    </td>
-                    <td className="px-3 py-2">
-                      {isAdmin && (
-                        <div className="flex gap-2">
-                          <Link
-                            href={`/projects/${p.id}/edit`}
-                            className="text-xs text-slate-600 hover:underline"
-                          >
+                    {isAdmin && (
+                      <td className="px-3 py-2">
+                        <div className="flex gap-3">
+                          <Link href={`/projects/${p.id}/edit`} className="text-xs text-slate-600 hover:underline">
                             編集
                           </Link>
                           <DeleteProjectButton projectId={p.id} />
                         </div>
-                      )}
-                    </td>
+                      </td>
+                    )}
                   </tr>
-                  {hasRates &&
-                    expanded.has(p.id) &&
+                  {expanded.has(p.id) &&
                     rates.map((r) => (
                       <tr key={r.id} className="bg-slate-50/60 text-xs">
-                        <td className="px-3 py-1.5 pl-9 text-slate-500" colSpan={3}>
+                        <td className="px-3 py-1.5 pl-9 text-slate-500">
                           └ {r.position}（{rateRangeLabel(r)}）
                         </td>
-                        <td className="px-3 py-1.5 text-right text-slate-600">{formatCurrency(r.unit_price)}</td>
-                        <td colSpan={3} />
+                        <td className="px-3 py-1.5 text-right text-slate-600">{formatCurrency(Number(r.unit_price))}</td>
+                        <td colSpan={isAdmin ? 3 : 2} />
                       </tr>
                     ))}
                 </Fragment>
               );
             })}
-            {filtered.length === 0 && (
+            {rows.length === 0 && (
               <tr>
-                <td colSpan={7} className="px-3 py-6 text-center text-slate-400">
+                <td colSpan={isAdmin ? 5 : 4} className="px-3 py-6 text-center text-slate-400">
                   該当する案件がありません
                 </td>
               </tr>
@@ -256,6 +169,9 @@ export function ProjectsClient({
           </tbody>
         </table>
       </div>
+      <p className="-mt-2 text-xs text-slate-400">
+        ここでは案件の登録だけを行います。何件やるかは「案件設定」で、獲得の登録は「ダッシュボード」で行います。
+      </p>
     </div>
   );
 }

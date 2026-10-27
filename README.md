@@ -63,6 +63,7 @@ Supabaseダッシュボードの「SQL Editor」で、`supabase/migrations/` 配
 | [`0023_link_acquisitions_to_project.sql`](supabase/migrations/0023_link_acquisitions_to_project.sql) | 新しい月の案件を登録・更新したとき、その月に計上する獲得（来月のアポなど）を同名の前の案件から付け替える（RPC `link_acquisitions_to_project`） |
 | [`0024_carry_over_projects.sql`](supabase/migrations/0024_carry_over_projects.sql) | 続く案件を毎月の案件として自動で作る（`carry_over_project` / `carry_over_projects`）。案件獲得の登録時に計上月の案件が無ければ自動作成。0023を含むので、この1本で動く |
 | [`0025_project_assignments.sql`](supabase/migrations/0025_project_assignments.sql) | 案件設定（月×メンバー×案件の目標件数・有効率）：`project_assignments`、RPC `save_project_assignments` |
+| [`0026_project_effective_rate.sql`](supabase/migrations/0026_project_effective_rate.sql) | 案件一覧を「案件名・料金表・デフォルト単価・有効率・ステータス」だけに簡素化。`projects.effective_rate`（案件の標準の有効率）を追加。既存データは消さない |
 
 ### 3. 環境変数を設定
 

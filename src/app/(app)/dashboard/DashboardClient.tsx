@@ -1,127 +1,142 @@
 "use client";
 
 import { Fragment, useMemo, useState } from "react";
-import type { Acquisition, OpConfirmedQuantity, Profile } from "@/types/database";
+import type { Acquisition, Profile, ProjectAssignment } from "@/types/database";
 import { formatCurrency } from "@/lib/format";
+import { createRateResolver } from "@/lib/projects";
 import { acquisitionMonth } from "@/lib/sales";
 import { AcquisitionButton, type AcquisitionProject } from "./AcquisitionButton";
 import { DeleteAcquisitionButton } from "./DeleteAcquisitionButton";
-import { OpConfirmedQuantityEditor } from "./OpConfirmedQuantityEditor";
 
 export type AcquisitionRow = Pick<
   Acquisition,
   "id" | "acquired_date" | "target_month" | "project_id" | "rate_id" | "staff_id" | "unit_price" | "quantity" | "amount"
 > & {
-  project: { id: string; name: string; confirmed_quantity: number } | null;
+  project: { id: string; name: string } | null;
   staff: { id: string; name: string } | null;
-  rate: { id: string; confirmed_quantity: number } | null;
 };
+
+type DashboardAssignment = Pick<ProjectAssignment, "month" | "staff_id" | "project_id" | "target_quantity" | "effective_rate">;
 
 type SalesEntry = { id: string; acquiredDate: string; quantity: number };
 
-type SalesRow = {
+// 単価ごとの内訳
+type Leaf = {
   key: string;
-  opName: string;
-  staffId: string;
-  projectId: string;
-  projectName: string;
-  rateId: string | null;
   unitPrice: number;
   acquiredQty: number;
   acquiredAmount: number;
   effectiveQty: number;
-  billedAmount: number;
+  effectiveAmount: number;
   entries: SalesEntry[];
+};
+
+// OP × 案件 の1行（案件設定の1行に当たる）
+type Cell = {
+  key: string;
+  staffId: string;
+  opName: string;
+  projectName: string;
+  target: number; // 案件設定の件数
+  rate: number; // 有効率（%）
+  leaves: Leaf[];
+  acquiredQty: number;
+  acquiredAmount: number;
+  effectiveQty: number;
+  effectiveAmount: number;
 };
 
 // 表示の切り替え：OPごと（OP→案件）／案件ごと（案件→OP）
 type View = "op" | "project";
 
-type MidRow = {
+type Group = {
   key: string;
   label: string;
-  leaves: SalesRow[];
-  unitPriceText: string;
+  cells: Cell[];
+  target: number;
   acquiredQty: number;
   acquiredAmount: number;
   effectiveQty: number;
-  billedAmount: number;
+  effectiveAmount: number;
 };
 
-type TopGroup = {
-  key: string;
-  label: string;
-  mids: MidRow[];
-  acquiredQty: number;
-  acquiredAmount: number;
-  effectiveQty: number;
-  billedAmount: number;
-};
+const sum = <T,>(list: T[], f: (r: T) => number) => list.reduce((acc, r) => acc + f(r), 0);
+const cmp = (a: string, b: string) => a.localeCompare(b, "ja");
+const qtyText = (n: number) => `${Math.round(n * 10) / 10}件`;
+const rateText = (n: number) => `${Math.round(n * 100) / 100}%`;
 
-// OP（担当者）×案件×単価の組み合わせごとに獲得件数を積み上げる。
-// 有効件数はOPごとに持つ（op_confirmed_quantities）。まだOPごとの値が無い場合は、
-// その案件（料金表の行）を獲得しているOPが1人だけなら案件側の確定件数を使い、
-// 複数OPいる場合は0とする（共有値を全OPに出すと同数になってしまうため）。
-function buildSalesRows(
-  acquisitions: AcquisitionRow[],
-  allAcquisitions: AcquisitionRow[],
-  opConfirmed: Pick<OpConfirmedQuantity, "project_id" | "rate_id" | "staff_id" | "confirmed_quantity">[]
-): SalesRow[] {
-  const targetKey = (projectId: string, rateId: string | null) => `${projectId}:${rateId ?? ""}`;
+// OP × 案件 ごとに、案件設定の件数と、獲得の登録（件数・金額・有効件数・有効金額）をまとめる。
+// 有効件数＝獲得件数×有効率、有効金額＝獲得金額×有効率。有効率は、その月のOPの案件設定にあればそれ、無ければ案件一覧の有効率。
+function buildCells(args: {
+  acquisitions: AcquisitionRow[]; // 表示する期間の獲得
+  assignments: DashboardAssignment[]; // 表示する期間の案件設定
+  nameById: Map<string, string>;
+  staffName: Map<string, string>;
+  rateOf: (month: string, staffId: string, projectId: string) => number;
+  defaultRateByName: Map<string, number>;
+}): Cell[] {
+  const { acquisitions, assignments, nameById, staffName, rateOf, defaultRateByName } = args;
+  const cells = new Map<string, Cell>();
 
-  const opsByTarget = new Map<string, Set<string>>();
-  for (const a of allAcquisitions) {
-    const k = targetKey(a.project_id, a.rate_id);
-    const set = opsByTarget.get(k) ?? new Set<string>();
-    set.add(a.staff_id);
-    opsByTarget.set(k, set);
+  const cellFor = (staffId: string, projectName: string, opName: string): Cell => {
+    const key = `${staffId}|${projectName}`;
+    let cell = cells.get(key);
+    if (!cell) {
+      cell = {
+        key,
+        staffId,
+        opName,
+        projectName,
+        target: 0,
+        rate: defaultRateByName.get(projectName) ?? 100,
+        leaves: [],
+        acquiredQty: 0,
+        acquiredAmount: 0,
+        effectiveQty: 0,
+        effectiveAmount: 0,
+      };
+      cells.set(key, cell);
+    }
+    return cell;
+  };
+
+  for (const as of assignments) {
+    const name = nameById.get(as.project_id);
+    if (!name) continue;
+    const cell = cellFor(as.staff_id, name, staffName.get(as.staff_id) ?? "不明");
+    cell.target += as.target_quantity;
+    cell.rate = Number(as.effective_rate);
   }
-
-  const recordMap = new Map<string, number>();
-  for (const r of opConfirmed) {
-    recordMap.set(`${targetKey(r.project_id, r.rate_id)}:${r.staff_id}`, r.confirmed_quantity);
-  }
-
-  const map = new Map<string, SalesRow>();
 
   for (const a of acquisitions) {
-    const opName = a.staff?.name ?? "不明";
-    const projectName = a.project?.name ?? "(削除済み案件)";
-    const tk = targetKey(a.project_id, a.rate_id);
-    const sharedQty = a.rate ? a.rate.confirmed_quantity : (a.project?.confirmed_quantity ?? 0);
-    const effectiveQty =
-      recordMap.get(`${tk}:${a.staff_id}`) ?? (opsByTarget.get(tk)?.size === 1 ? sharedQty : 0);
-    const key = `${a.staff_id}:${a.rate_id ?? a.project_id}:${a.unit_price}`;
-
-    const entry = map.get(key) ?? {
-      key,
-      opName,
-      staffId: a.staff_id,
-      projectId: a.project_id,
-      projectName,
-      rateId: a.rate_id,
-      unitPrice: a.unit_price,
-      acquiredQty: 0,
-      acquiredAmount: 0,
-      effectiveQty,
-      billedAmount: 0,
-      entries: [],
-    };
-    entry.acquiredQty += a.quantity;
-    entry.entries.push({ id: a.id, acquiredDate: a.acquired_date, quantity: a.quantity });
-    map.set(key, entry);
+    const name = a.project?.name ?? "(削除済み案件)";
+    const cell = cellFor(a.staff_id, name, a.staff?.name ?? "不明");
+    const rate = rateOf(acquisitionMonth(a), a.staff_id, a.project_id);
+    const leafKey = `${cell.key}|${a.unit_price}`;
+    let leaf = cell.leaves.find((l) => l.key === leafKey);
+    if (!leaf) {
+      leaf = { key: leafKey, unitPrice: a.unit_price, acquiredQty: 0, acquiredAmount: 0, effectiveQty: 0, effectiveAmount: 0, entries: [] };
+      cell.leaves.push(leaf);
+    }
+    leaf.acquiredQty += a.quantity;
+    leaf.acquiredAmount += Number(a.amount);
+    leaf.effectiveQty += (a.quantity * rate) / 100;
+    leaf.effectiveAmount += (Number(a.amount) * rate) / 100;
+    leaf.entries.push({ id: a.id, acquiredDate: a.acquired_date, quantity: a.quantity });
   }
 
-  const rows = Array.from(map.values());
-  for (const row of rows) {
-    row.acquiredAmount = row.unitPrice * row.acquiredQty;
-    row.billedAmount = row.unitPrice * row.effectiveQty;
-    row.entries.sort((a, b) => b.acquiredDate.localeCompare(a.acquiredDate));
+  for (const cell of cells.values()) {
+    cell.leaves.sort((a, b) => b.unitPrice - a.unitPrice);
+    for (const leaf of cell.leaves) leaf.entries.sort((a, b) => b.acquiredDate.localeCompare(a.acquiredDate));
+    cell.acquiredQty = sum(cell.leaves, (l) => l.acquiredQty);
+    cell.acquiredAmount = sum(cell.leaves, (l) => l.acquiredAmount);
+    cell.effectiveQty = sum(cell.leaves, (l) => l.effectiveQty);
+    cell.effectiveAmount = sum(cell.leaves, (l) => l.effectiveAmount);
+    // 複数の月をまとめて見るときなどは、有効件数÷獲得件数を有効率として表示する
+    if (cell.acquiredQty > 0) cell.rate = (cell.effectiveQty / cell.acquiredQty) * 100;
   }
 
-  return rows.sort(
-    (a, b) => a.opName.localeCompare(b.opName, "ja") || a.projectName.localeCompare(b.projectName, "ja")
-  );
+  return Array.from(cells.values());
 }
 
 type DailyGroup = {
@@ -179,62 +194,56 @@ function buildDaily(acquisitions: AcquisitionRow[], monthKey: string, view: View
   return result.sort((a, b) => a.label.localeCompare(b.label, "ja"));
 }
 
-// 単価ごとの行を、OP→案件（または案件→OP）の2段にまとめる
-function groupRows(rows: SalesRow[], view: View): TopGroup[] {
-  const topOf = (r: SalesRow) => (view === "op" ? r.opName : r.projectName);
-  const midOf = (r: SalesRow) => (view === "op" ? r.projectName : r.opName);
+// OP×案件の行を、OP→案件（または案件→OP）にまとめる
+function groupCells(cells: Cell[], view: View): Group[] {
+  const topOf = (c: Cell) => (view === "op" ? c.opName : c.projectName);
+  const midOf = (c: Cell) => (view === "op" ? c.projectName : c.opName);
 
-  const tops = new Map<string, Map<string, SalesRow[]>>();
-  for (const r of rows) {
-    const mids = tops.get(topOf(r)) ?? new Map<string, SalesRow[]>();
-    mids.set(midOf(r), [...(mids.get(midOf(r)) ?? []), r]);
-    tops.set(topOf(r), mids);
-  }
+  const tops = new Map<string, Cell[]>();
+  for (const c of cells) tops.set(topOf(c), [...(tops.get(topOf(c)) ?? []), c]);
 
-  const sum = <T,>(list: T[], f: (r: T) => number) => list.reduce((acc, r) => acc + f(r), 0);
-  const cmp = (a: string, b: string) => a.localeCompare(b, "ja");
+  return Array.from(tops, ([label, list]) => ({
+    key: `${view}|${label}`,
+    label,
+    cells: list.sort((a, b) => cmp(midOf(a), midOf(b))),
+    target: sum(list, (c) => c.target),
+    acquiredQty: sum(list, (c) => c.acquiredQty),
+    acquiredAmount: sum(list, (c) => c.acquiredAmount),
+    effectiveQty: sum(list, (c) => c.effectiveQty),
+    effectiveAmount: sum(list, (c) => c.effectiveAmount),
+  })).sort((a, b) => cmp(a.label, b.label));
+}
 
-  return Array.from(tops, ([topLabel, mids]) => {
-    const midRows: MidRow[] = Array.from(mids, ([midLabel, leaves]) => {
-      const prices = Array.from(new Set(leaves.map((l) => l.unitPrice)));
-      leaves.sort((a, b) => b.unitPrice - a.unitPrice);
-      return {
-        key: `${view}|${topLabel}|${midLabel}`,
-        label: midLabel,
-        leaves,
-        unitPriceText: prices.length === 1 ? formatCurrency(prices[0]) : `${prices.length}種類`,
-        acquiredQty: sum(leaves, (l) => l.acquiredQty),
-        acquiredAmount: sum(leaves, (l) => l.acquiredAmount),
-        effectiveQty: sum(leaves, (l) => l.effectiveQty),
-        billedAmount: sum(leaves, (l) => l.billedAmount),
-      };
-    }).sort((a, b) => cmp(a.label, b.label));
-
-    return {
-      key: `${view}|${topLabel}`,
-      label: topLabel,
-      mids: midRows,
-      acquiredQty: sum(midRows, (m) => m.acquiredQty),
-      acquiredAmount: sum(midRows, (m) => m.acquiredAmount),
-      effectiveQty: sum(midRows, (m) => m.effectiveQty),
-      billedAmount: sum(midRows, (m) => m.billedAmount),
-    };
-  }).sort((a, b) => cmp(a.label, b.label));
+// 進捗率（獲得件数 ÷ 案件設定の件数）の数字と棒
+function Progress({ acquired, target }: { acquired: number; target: number }) {
+  if (target <= 0) return <span className="text-slate-300">-</span>;
+  const ratio = (acquired / target) * 100;
+  return (
+    <div className="flex items-center justify-end gap-2">
+      <div className="h-1.5 w-14 overflow-hidden rounded-full bg-slate-200">
+        <div
+          className={`h-full rounded-full ${ratio >= 100 ? "bg-emerald-500" : "bg-sky-500"}`}
+          style={{ width: `${Math.min(100, ratio)}%` }}
+        />
+      </div>
+      <span className="w-14 text-right">{rateText(ratio)}</span>
+    </div>
+  );
 }
 
 export function DashboardClient({
   projects,
+  assignments,
   staffList,
   acquisitions,
-  opConfirmed,
   currentUserId,
   isAdmin,
   todayISO,
 }: {
   projects: AcquisitionProject[];
+  assignments: DashboardAssignment[];
   staffList: Pick<Profile, "id" | "name">[];
   acquisitions: AcquisitionRow[];
-  opConfirmed: Pick<OpConfirmedQuantity, "project_id" | "rate_id" | "staff_id" | "confirmed_quantity">[];
   currentUserId: string;
   isAdmin: boolean;
   todayISO: string;
@@ -257,9 +266,10 @@ export function DashboardClient({
   // 計上月（来月のアポなどは獲得日と別の月に載る）ごとのタブ
   const monthTabs = useMemo(() => {
     const set = new Set(acquisitions.map(acquisitionMonth));
+    for (const a of assignments) set.add(a.month.slice(0, 7));
     set.add(currentMonthKey);
     return Array.from(set).sort();
-  }, [acquisitions, currentMonthKey]);
+  }, [acquisitions, assignments, currentMonthKey]);
 
   const spansMultipleYears = useMemo(
     () => new Set(monthTabs.map((m) => m.slice(0, 4))).size > 1,
@@ -271,11 +281,57 @@ export function DashboardClient({
     return acquisitions.filter((a) => acquisitionMonth(a) === monthTab);
   }, [acquisitions, monthTab]);
 
-  const salesRows = useMemo(
-    () => buildSalesRows(filteredAcquisitions, acquisitions, opConfirmed),
-    [filteredAcquisitions, acquisitions, opConfirmed]
+  const filteredAssignments = useMemo(() => {
+    if (monthTab === "all") return assignments;
+    return assignments.filter((a) => a.month.slice(0, 7) === monthTab);
+  }, [assignments, monthTab]);
+
+  const nameById = useMemo(() => new Map(projects.map((p) => [p.id, p.name])), [projects]);
+  const staffName = useMemo(() => new Map(staffList.map((s) => [s.id, s.name])), [staffList]);
+  const rateOf = useMemo(() => createRateResolver(projects, assignments), [projects, assignments]);
+  const defaultRateByName = useMemo(() => {
+    const map = new Map<string, number>();
+    const latest = new Map<string, AcquisitionProject>();
+    for (const p of projects) {
+      const cur = latest.get(p.name);
+      if (!cur || p.start_date > cur.start_date) latest.set(p.name, p);
+    }
+    for (const [name, p] of latest) map.set(name, Number(p.effective_rate));
+    return map;
+  }, [projects]);
+
+  const cells = useMemo(
+    () =>
+      buildCells({
+        acquisitions: filteredAcquisitions,
+        assignments: filteredAssignments,
+        nameById,
+        staffName,
+        rateOf,
+        defaultRateByName,
+      }),
+    [filteredAcquisitions, filteredAssignments, nameById, staffName, rateOf, defaultRateByName]
   );
-  const groups = useMemo(() => groupRows(salesRows, view), [salesRows, view]);
+  const groups = useMemo(() => groupCells(cells, view), [cells, view]);
+
+  // 獲得の登録画面に出す、案件設定の件数と現在件数（月|OP|案件名 ごと）
+  const progress = useMemo(() => {
+    const map = new Map<string, { target: number; current: number }>();
+    for (const a of assignments) {
+      const name = nameById.get(a.project_id);
+      if (!name) continue;
+      const key = `${a.month.slice(0, 7)}|${a.staff_id}|${name}`;
+      const cur = map.get(key) ?? { target: 0, current: 0 };
+      cur.target += a.target_quantity;
+      map.set(key, cur);
+    }
+    for (const a of acquisitions) {
+      const key = `${acquisitionMonth(a)}|${a.staff_id}|${a.project?.name ?? ""}`;
+      const cur = map.get(key);
+      if (cur) cur.current += a.quantity;
+    }
+    return map;
+  }, [assignments, acquisitions, nameById]);
 
   // タブが「全て」のときはデイリー表は当月を対象にする
   const dailyTargetMonth = monthTab === "all" ? currentMonthKey : monthTab;
@@ -285,24 +341,22 @@ export function DashboardClient({
   );
 
   const totals = useMemo(
-    () =>
-      salesRows.reduce(
-        (acc, r) => {
-          acc.acquiredQty += r.acquiredQty;
-          acc.acquiredAmount += r.acquiredAmount;
-          acc.effectiveQty += r.effectiveQty;
-          acc.billedAmount += r.billedAmount;
-          return acc;
-        },
-        { acquiredQty: 0, acquiredAmount: 0, effectiveQty: 0, billedAmount: 0 }
-      ),
-    [salesRows]
+    () => ({
+      target: sum(cells, (c) => c.target),
+      acquiredQty: sum(cells, (c) => c.acquiredQty),
+      acquiredAmount: sum(cells, (c) => c.acquiredAmount),
+      effectiveQty: sum(cells, (c) => c.effectiveQty),
+      effectiveAmount: sum(cells, (c) => c.effectiveAmount),
+    }),
+    [cells]
   );
 
   const monthText = (m: string) =>
     spansMultipleYears ? `${m.slice(0, 4)}年${Number(m.slice(5, 7))}月` : `${Number(m.slice(5, 7))}月`;
   const midHeader = view === "op" ? "案件名" : "OP";
   const topKind = view === "op" ? "OP" : "案件";
+  const midLabel = (c: Cell) => (view === "op" ? c.projectName : c.opName);
+  const COLS = 8;
 
   return (
     <div className="flex flex-col gap-6">
@@ -354,7 +408,7 @@ export function DashboardClient({
             </button>
           ))}
         </div>
-        <AcquisitionButton projects={projects} staffList={staffList} currentUserId={currentUserId} />
+        <AcquisitionButton projects={projects} staffList={staffList} currentUserId={currentUserId} progress={progress} />
       </div>
 
       <div className="overflow-x-auto rounded-lg border border-slate-200 bg-white">
@@ -362,145 +416,160 @@ export function DashboardClient({
           <thead className="bg-slate-50">
             <tr>
               <th className="px-3 py-2 text-left font-medium text-slate-500">{midHeader}</th>
-              <th className="px-3 py-2 text-right font-medium text-slate-500">単価</th>
+              <th className="px-3 py-2 text-right font-medium text-slate-500">設定件数</th>
               <th className="px-3 py-2 text-right font-medium text-slate-500">獲得件数</th>
-              <th className="px-3 py-2 text-right font-medium text-slate-500">獲得金額</th>
+              <th className="px-3 py-2 text-right font-medium text-slate-500">進捗率</th>
+              <th className="px-3 py-2 text-right font-medium text-slate-500">有効率</th>
               <th className="px-3 py-2 text-right font-medium text-slate-500">有効件数</th>
-              <th className="px-3 py-2 text-right font-medium text-slate-500">請求金額</th>
+              <th className="px-3 py-2 text-right font-medium text-slate-500">獲得金額</th>
+              <th className="px-3 py-2 text-right font-medium text-slate-500">有効金額</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-100">
             {groups.map((group) => (
               <Fragment key={group.key}>
                 <tr className="bg-slate-700">
-                  <td colSpan={6} className="px-3 py-2 font-bold text-white">
+                  <td colSpan={COLS} className="px-3 py-2 font-bold text-white">
                     {group.label}
                   </td>
                 </tr>
-                {group.mids.map((mid) => (
-                  <Fragment key={mid.key}>
-                    <tr className="hover:bg-slate-50">
-                      <td className="px-3 py-2 text-slate-700">
-                        <button
-                          type="button"
-                          onClick={() => toggle(setExpanded, mid.key)}
-                          className="flex items-center gap-1.5 text-left hover:text-slate-900"
-                          aria-label={expanded.has(mid.key) ? "単価ごとの内訳を閉じる" : "単価ごとの内訳を開く"}
-                        >
-                          <span className="inline-block w-3 text-xs text-slate-400">
-                            {expanded.has(mid.key) ? "▼" : "▶"}
-                          </span>
-                          {mid.label}
-                        </button>
-                      </td>
-                      <td className="px-3 py-2 text-right text-slate-500">{mid.unitPriceText}</td>
-                      <td className="px-3 py-2 text-right text-slate-700">{mid.acquiredQty}件</td>
-                      <td className="px-3 py-2 text-right text-slate-700">{formatCurrency(mid.acquiredAmount)}</td>
-                      <td className="px-3 py-2 text-right text-slate-700">{mid.effectiveQty}件</td>
-                      <td className="px-3 py-2 text-right font-medium text-slate-900">
-                        {formatCurrency(mid.billedAmount)}
-                      </td>
-                    </tr>
-                    {expanded.has(mid.key) &&
-                      mid.leaves.map((r) => {
-                        const leafKey = `${mid.key}|${r.key}`;
-                        return (
-                          <Fragment key={leafKey}>
-                            <tr className="bg-slate-50/70 text-xs">
-                              <td className="px-3 py-1.5 pl-9 text-slate-600">
-                                <button
-                                  type="button"
-                                  onClick={() => toggle(setExpanded, leafKey)}
-                                  className="flex items-center gap-1.5 text-left hover:text-slate-900"
-                                  aria-label={expanded.has(leafKey) ? "登録日ごとの内訳を閉じる" : "登録日ごとの内訳を開く"}
-                                >
-                                  <span className="inline-block w-3 text-slate-400">
-                                    {expanded.has(leafKey) ? "▼" : "▶"}
-                                  </span>
-                                  単価 {formatCurrency(r.unitPrice)}
-                                </button>
-                              </td>
-                              <td className="px-3 py-1.5 text-right text-slate-600">{formatCurrency(r.unitPrice)}</td>
-                              <td className="px-3 py-1.5 text-right text-slate-600">{r.acquiredQty}件</td>
-                              <td className="px-3 py-1.5 text-right text-slate-600">
-                                {formatCurrency(r.acquiredAmount)}
-                              </td>
-                              <td className="px-3 py-1.5 text-right">
-                                {isAdmin ? (
-                                  <OpConfirmedQuantityEditor
-                                    projectId={r.projectId}
-                                    rateId={r.rateId}
-                                    staffId={r.staffId}
-                                    confirmedQuantity={r.effectiveQty}
-                                    unitPrice={r.unitPrice}
-                                  />
-                                ) : (
-                                  <span className="text-slate-600">{r.effectiveQty}件</span>
-                                )}
-                              </td>
-                              <td className="px-3 py-1.5 text-right font-medium text-slate-800">
-                                {formatCurrency(r.billedAmount)}
-                              </td>
-                            </tr>
-                            {expanded.has(leafKey) &&
-                              r.entries.map((e) => (
-                                <tr key={e.id} className="bg-white text-xs">
-                                  <td className="px-3 py-1 pl-16 text-slate-500">└ {e.acquiredDate}</td>
-                                  <td className="px-3 py-1" />
-                                  <td className="px-3 py-1 text-right text-slate-500">{e.quantity}件</td>
-                                  <td className="px-3 py-1 text-right text-slate-500">
-                                    {formatCurrency(e.quantity * r.unitPrice)}
-                                  </td>
-                                  <td className="px-3 py-1" colSpan={2}>
-                                    {isAdmin && (
-                                      <div className="flex justify-end">
-                                        <DeleteAcquisitionButton id={e.id} />
-                                      </div>
-                                    )}
-                                  </td>
-                                </tr>
-                              ))}
-                          </Fragment>
-                        );
-                      })}
-                  </Fragment>
-                ))}
+                {group.cells.map((cell) => {
+                  const cellKey = `${group.key}|${cell.key}`;
+                  const canExpand = cell.leaves.length > 0;
+                  return (
+                    <Fragment key={cellKey}>
+                      <tr className="hover:bg-slate-50">
+                        <td className="px-3 py-2 text-slate-700">
+                          {canExpand ? (
+                            <button
+                              type="button"
+                              onClick={() => toggle(setExpanded, cellKey)}
+                              className="flex items-center gap-1.5 text-left hover:text-slate-900"
+                              aria-label={expanded.has(cellKey) ? "単価ごとの内訳を閉じる" : "単価ごとの内訳を開く"}
+                            >
+                              <span className="inline-block w-3 text-xs text-slate-400">
+                                {expanded.has(cellKey) ? "▼" : "▶"}
+                              </span>
+                              {midLabel(cell)}
+                            </button>
+                          ) : (
+                            <span className="pl-[18px]">{midLabel(cell)}</span>
+                          )}
+                        </td>
+                        <td className="px-3 py-2 text-right text-slate-700">{qtyText(cell.target)}</td>
+                        <td className="px-3 py-2 text-right text-slate-700">{qtyText(cell.acquiredQty)}</td>
+                        <td className="px-3 py-2 text-right text-slate-700">
+                          <Progress acquired={cell.acquiredQty} target={cell.target} />
+                        </td>
+                        <td className="px-3 py-2 text-right text-slate-500">{rateText(cell.rate)}</td>
+                        <td className="px-3 py-2 text-right text-slate-700">{qtyText(cell.effectiveQty)}</td>
+                        <td className="px-3 py-2 text-right text-slate-700">{formatCurrency(cell.acquiredAmount)}</td>
+                        <td className="px-3 py-2 text-right font-medium text-slate-900">
+                          {formatCurrency(Math.round(cell.effectiveAmount))}
+                        </td>
+                      </tr>
+                      {expanded.has(cellKey) &&
+                        cell.leaves.map((leaf) => {
+                          const leafKey = `${cellKey}|${leaf.key}`;
+                          return (
+                            <Fragment key={leafKey}>
+                              <tr className="bg-slate-50/70 text-xs">
+                                <td className="px-3 py-1.5 pl-9 text-slate-600">
+                                  <button
+                                    type="button"
+                                    onClick={() => toggle(setExpanded, leafKey)}
+                                    className="flex items-center gap-1.5 text-left hover:text-slate-900"
+                                    aria-label={expanded.has(leafKey) ? "登録日ごとの内訳を閉じる" : "登録日ごとの内訳を開く"}
+                                  >
+                                    <span className="inline-block w-3 text-slate-400">
+                                      {expanded.has(leafKey) ? "▼" : "▶"}
+                                    </span>
+                                    単価 {formatCurrency(leaf.unitPrice)}
+                                  </button>
+                                </td>
+                                <td className="px-3 py-1.5" />
+                                <td className="px-3 py-1.5 text-right text-slate-600">{qtyText(leaf.acquiredQty)}</td>
+                                <td className="px-3 py-1.5" colSpan={2} />
+                                <td className="px-3 py-1.5 text-right text-slate-600">{qtyText(leaf.effectiveQty)}</td>
+                                <td className="px-3 py-1.5 text-right text-slate-600">
+                                  {formatCurrency(leaf.acquiredAmount)}
+                                </td>
+                                <td className="px-3 py-1.5 text-right font-medium text-slate-800">
+                                  {formatCurrency(Math.round(leaf.effectiveAmount))}
+                                </td>
+                              </tr>
+                              {expanded.has(leafKey) &&
+                                leaf.entries.map((e) => (
+                                  <tr key={e.id} className="bg-white text-xs">
+                                    <td className="px-3 py-1 pl-16 text-slate-500">└ {e.acquiredDate}</td>
+                                    <td className="px-3 py-1" />
+                                    <td className="px-3 py-1 text-right text-slate-500">{e.quantity}件</td>
+                                    <td className="px-3 py-1" colSpan={3} />
+                                    <td className="px-3 py-1 text-right text-slate-500">
+                                      {formatCurrency(e.quantity * leaf.unitPrice)}
+                                    </td>
+                                    <td className="px-3 py-1">
+                                      {isAdmin && (
+                                        <div className="flex justify-end">
+                                          <DeleteAcquisitionButton id={e.id} />
+                                        </div>
+                                      )}
+                                    </td>
+                                  </tr>
+                                ))}
+                            </Fragment>
+                          );
+                        })}
+                    </Fragment>
+                  );
+                })}
                 <tr className="border-t-2 border-slate-300 bg-slate-200 font-bold text-slate-900">
-                  <td className="px-3 py-2" colSpan={2}>
-                    {group.label}　小計
+                  <td className="px-3 py-2">{group.label}　小計</td>
+                  <td className="px-3 py-2 text-right">{qtyText(group.target)}</td>
+                  <td className="px-3 py-2 text-right">{qtyText(group.acquiredQty)}</td>
+                  <td className="px-3 py-2 text-right">
+                    <Progress acquired={group.acquiredQty} target={group.target} />
                   </td>
-                  <td className="px-3 py-2 text-right">{group.acquiredQty}件</td>
+                  <td className="px-3 py-2 text-right">
+                    {group.acquiredQty > 0 ? rateText((group.effectiveQty / group.acquiredQty) * 100) : "-"}
+                  </td>
+                  <td className="px-3 py-2 text-right">{qtyText(group.effectiveQty)}</td>
                   <td className="px-3 py-2 text-right">{formatCurrency(group.acquiredAmount)}</td>
-                  <td className="px-3 py-2 text-right">{group.effectiveQty}件</td>
-                  <td className="px-3 py-2 text-right">{formatCurrency(group.billedAmount)}</td>
+                  <td className="px-3 py-2 text-right">{formatCurrency(Math.round(group.effectiveAmount))}</td>
                 </tr>
               </Fragment>
             ))}
-            {salesRows.length === 0 && (
+            {cells.length === 0 && (
               <tr>
-                <td colSpan={6} className="px-3 py-6 text-center text-slate-400">
-                  この期間の獲得データがありません
+                <td colSpan={COLS} className="px-3 py-6 text-center text-slate-400">
+                  この期間の案件設定・獲得データがありません
                 </td>
               </tr>
             )}
           </tbody>
-          {salesRows.length > 0 && (
+          {cells.length > 0 && (
             <tfoot className="border-t-2 border-slate-400 bg-slate-300 font-bold text-slate-900">
               <tr>
-                <td className="px-3 py-2" colSpan={2}>
-                  合計
+                <td className="px-3 py-2">合計</td>
+                <td className="px-3 py-2 text-right">{qtyText(totals.target)}</td>
+                <td className="px-3 py-2 text-right">{qtyText(totals.acquiredQty)}</td>
+                <td className="px-3 py-2 text-right">
+                  <Progress acquired={totals.acquiredQty} target={totals.target} />
                 </td>
-                <td className="px-3 py-2 text-right">{totals.acquiredQty}件</td>
+                <td className="px-3 py-2 text-right">
+                  {totals.acquiredQty > 0 ? rateText((totals.effectiveQty / totals.acquiredQty) * 100) : "-"}
+                </td>
+                <td className="px-3 py-2 text-right">{qtyText(totals.effectiveQty)}</td>
                 <td className="px-3 py-2 text-right">{formatCurrency(totals.acquiredAmount)}</td>
-                <td className="px-3 py-2 text-right">{totals.effectiveQty}件</td>
-                <td className="px-3 py-2 text-right">{formatCurrency(totals.billedAmount)}</td>
+                <td className="px-3 py-2 text-right">{formatCurrency(Math.round(totals.effectiveAmount))}</td>
               </tr>
             </tfoot>
           )}
         </table>
       </div>
       <p className="-mt-3 text-xs text-slate-400">
-        {topKind}ごとにまとめています。行の▶を押すと単価ごとの件数、さらに押すと登録日ごとの内訳が見えます。有効件数は単価ごとの行で編集できます。
+        {topKind}ごとにまとめています。設定件数は「案件設定」で決めた件数、獲得件数は案件獲得の登録の合計です。進捗率＝獲得件数÷設定件数、有効件数＝獲得件数×有効率、有効金額＝獲得金額×有効率です。
+        行の▶を押すと単価ごとの件数、さらに押すと登録日ごとの内訳が見えます。
       </p>
 
       <div className="rounded-lg border border-slate-200 bg-white p-4">

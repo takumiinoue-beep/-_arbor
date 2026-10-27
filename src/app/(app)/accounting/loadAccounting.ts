@@ -1,7 +1,8 @@
 import { createClient } from "@/lib/supabase/server";
 import { requireAdmin } from "@/lib/auth";
 import { fetchAllRows } from "@/lib/supabase/fetchAll";
-import { monthlyBilledByStaff, type OpConfirmedRecord, type SalesAcquisition } from "@/lib/sales";
+import { monthlyBilledByStaff, type SalesAcquisition } from "@/lib/sales";
+import { createRateResolver, type RateAssignment, type RateProject } from "@/lib/projects";
 import { buildActualInput, expenseOverlapFilter, fiscalMonths, fiscalRange } from "@/lib/accounting";
 import type { Expense, Member, PlActualEntry, PlPlanEntry, VendorInvoice } from "@/types/database";
 
@@ -20,15 +21,14 @@ export async function loadAccounting(fy: number) {
     { data: planEntries },
     { data: actualEntries },
     { data: staff },
-    { data: opConfirmed },
     { data: projects },
-    { data: rates },
+    { data: assignments },
   ] = await Promise.all([
     requireAdmin(),
     fetchAllRows<SalesAcquisition>((a, b) =>
       supabase
         .from("acquisitions")
-        .select("acquired_date, target_month, quantity, unit_price, staff_id, project_id, rate_id")
+        .select("acquired_date, target_month, quantity, unit_price, staff_id, project_id")
         .order("acquired_date")
         .order("id")
         .range(a, b)
@@ -43,19 +43,14 @@ export async function loadAccounting(fy: number) {
     supabase.from("pl_plan_entries").select("*").gte("plan_month", from).lt("plan_month", toExclusive),
     supabase.from("pl_actual_entries").select("*").gte("plan_month", from).lt("plan_month", toExclusive),
     supabase.from("profiles").select("id, name").order("name"),
-    supabase.from("op_confirmed_quantities").select("project_id, rate_id, staff_id, confirmed_quantity"),
-    supabase.from("projects").select("id, confirmed_quantity"),
-    supabase.from("price_rates").select("id, project_id, confirmed_quantity"),
+    supabase.from("projects").select("id, name, start_date, effective_rate"),
+    supabase.from("project_assignments").select("month, staff_id, project_id, effective_rate"),
   ]);
 
-  const sharedConfirmed = new Map<string, number>();
-  for (const p of projects ?? []) sharedConfirmed.set(`${p.id}:`, p.confirmed_quantity);
-  for (const r of rates ?? []) sharedConfirmed.set(`${r.project_id}:${r.id}`, r.confirmed_quantity);
-
+  // 売上＝獲得金額 × 有効率（案件設定の有効率 → 無ければ案件一覧の有効率）
   const salesByStaff = monthlyBilledByStaff({
     acquisitions,
-    opConfirmed: (opConfirmed as OpConfirmedRecord[]) ?? [],
-    sharedConfirmed,
+    rateOf: createRateResolver((projects as RateProject[]) ?? [], (assignments as RateAssignment[]) ?? []),
   });
   const staffList = (staff ?? []) as { id: string; name: string }[];
 
