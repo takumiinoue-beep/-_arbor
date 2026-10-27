@@ -17,7 +17,7 @@ export type AcquisitionRow = Pick<
 
 type DashboardAssignment = Pick<ProjectAssignment, "month" | "staff_id" | "project_id" | "target_quantity">;
 
-type SalesEntry = { id: string; acquiredDate: string; quantity: number };
+type SalesEntry = { id: string; acquiredDate: string; quantity: number; unitPrice: number };
 
 // 単価ごとの内訳
 type Leaf = {
@@ -104,7 +104,7 @@ function buildCells(args: {
     }
     leaf.acquiredQty += a.quantity;
     leaf.acquiredAmount += Number(a.amount);
-    leaf.entries.push({ id: a.id, acquiredDate: a.acquired_date, quantity: a.quantity });
+    leaf.entries.push({ id: a.id, acquiredDate: a.acquired_date, quantity: a.quantity, unitPrice: a.unit_price });
   }
 
   for (const cell of cells.values()) {
@@ -204,6 +204,53 @@ function Progress({ acquired, target }: { acquired: number; target: number }) {
       </div>
       <span className="w-14 text-right">{rateText(ratio)}</span>
     </div>
+  );
+}
+
+// 獲得件数の数字。カーソルを当てると、登録日ごとの件数を表示する（管理者は、そこから登録の削除もできる）
+// 表の横スクロール領域に隠れないよう、ポップアップは画面基準（fixed）で表示する
+function QtyWithDetail({ qty, entries, isAdmin }: { qty: number; entries: SalesEntry[]; isAdmin: boolean }) {
+  const [anchor, setAnchor] = useState<{ right: number; top: number; bottom: number } | null>(null);
+  if (entries.length === 0) return <>{qtyText(qty)}</>;
+  const sorted = [...entries].sort((a, b) => b.acquiredDate.localeCompare(a.acquiredDate));
+
+  const open = (el: HTMLElement) => {
+    const r = el.getBoundingClientRect();
+    setAnchor({ right: window.innerWidth - r.right, top: r.top, bottom: r.bottom });
+  };
+  // 下に収まらないときは上向きに出す
+  const above = anchor !== null && anchor.bottom + 40 + sorted.length * 24 > window.innerHeight;
+
+  return (
+    <span
+      className="inline-block"
+      onMouseEnter={(e) => open(e.currentTarget)}
+      onMouseLeave={() => setAnchor(null)}
+      onFocus={(e) => open(e.currentTarget)}
+      onBlur={() => setAnchor(null)}
+    >
+      <span tabIndex={0} className="cursor-default border-b border-dotted border-slate-400">
+        {qtyText(qty)}
+      </span>
+      {anchor && (
+        <span
+          className="fixed z-30 max-h-80 overflow-y-auto py-1"
+          style={above ? { right: anchor.right, bottom: window.innerHeight - anchor.top } : { right: anchor.right, top: anchor.bottom }}
+        >
+          <span className="block min-w-44 rounded-md border border-slate-200 bg-white p-2 text-left text-xs font-normal text-slate-700 shadow-lg">
+            {sorted.map((e) => (
+              <span key={e.id} className="flex items-center justify-between gap-4 py-0.5 whitespace-nowrap">
+                <span>{e.acquiredDate}</span>
+                <span className="flex items-center gap-2">
+                  <span>{e.quantity}件</span>
+                  {isAdmin && <DeleteAcquisitionButton id={e.id} />}
+                </span>
+              </span>
+            ))}
+          </span>
+        </span>
+      )}
+    </span>
   );
 }
 
@@ -415,7 +462,13 @@ export function DashboardClient({
                           )}
                         </td>
                         <td className="px-3 py-2 text-right text-slate-700">{qtyText(cell.target)}</td>
-                        <td className="px-3 py-2 text-right text-slate-700">{qtyText(cell.acquiredQty)}</td>
+                        <td className="px-3 py-2 text-right text-slate-700">
+                          <QtyWithDetail
+                            qty={cell.acquiredQty}
+                            entries={cell.leaves.flatMap((l) => l.entries)}
+                            isAdmin={isAdmin}
+                          />
+                        </td>
                         <td className="px-3 py-2 text-right text-slate-700">
                           <Progress acquired={cell.acquiredQty} target={cell.target} />
                         </td>
@@ -428,40 +481,17 @@ export function DashboardClient({
                             <Fragment key={leafKey}>
                               <tr className="bg-slate-50/70 text-xs">
                                 <td className="px-3 py-1.5 pl-9 text-slate-600">
-                                  <button
-                                    type="button"
-                                    onClick={() => toggle(setExpanded, leafKey)}
-                                    className="flex items-center gap-1.5 text-left hover:text-slate-900"
-                                    aria-label={expanded.has(leafKey) ? "登録日ごとの内訳を閉じる" : "登録日ごとの内訳を開く"}
-                                  >
-                                    <span className="inline-block w-3 text-slate-400">
-                                      {expanded.has(leafKey) ? "▼" : "▶"}
-                                    </span>
-                                    単価 {formatCurrency(leaf.unitPrice)}
-                                  </button>
+                                  単価 {formatCurrency(leaf.unitPrice)}
                                 </td>
                                 <td className="px-3 py-1.5" />
-                                <td className="px-3 py-1.5 text-right text-slate-600">{qtyText(leaf.acquiredQty)}</td>
+                                <td className="px-3 py-1.5 text-right text-slate-600">
+                                  <QtyWithDetail qty={leaf.acquiredQty} entries={leaf.entries} isAdmin={isAdmin} />
+                                </td>
                                 <td className="px-3 py-1.5" />
                                 <td className="px-3 py-1.5 text-right text-slate-600">
                                   {formatCurrency(leaf.acquiredAmount)}
                                 </td>
                               </tr>
-                              {expanded.has(leafKey) &&
-                                leaf.entries.map((e) => (
-                                  <tr key={e.id} className="bg-white text-xs">
-                                    <td className="px-3 py-1 pl-16 text-slate-500">└ {e.acquiredDate}</td>
-                                    <td className="px-3 py-1" />
-                                    <td className="px-3 py-1 text-right text-slate-500">{e.quantity}件</td>
-                                    <td className="px-3 py-1" />
-                                    <td className="px-3 py-1 text-right text-slate-500">
-                                      <div className="flex items-center justify-end gap-2">
-                                        {formatCurrency(e.quantity * leaf.unitPrice)}
-                                        {isAdmin && <DeleteAcquisitionButton id={e.id} />}
-                                      </div>
-                                    </td>
-                                  </tr>
-                                ))}
                             </Fragment>
                           );
                         })}
@@ -504,7 +534,7 @@ export function DashboardClient({
       </div>
       <p className="-mt-3 text-xs text-slate-400">
         {topKind}ごとにまとめています。設定件数は「案件設定」で決めた件数、獲得件数は案件獲得の登録の合計です。進捗率＝獲得件数÷設定件数です。
-        行の▶を押すと単価ごとの件数、さらに押すと登録日ごとの内訳が見えます。
+        行の▶を押すと単価ごとの件数が見えます。獲得件数にカーソルを当てると、登録日ごとの件数が表示されます。
       </p>
 
       <div className="rounded-lg border border-slate-200 bg-white p-4">
