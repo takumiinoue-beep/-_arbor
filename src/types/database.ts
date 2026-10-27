@@ -145,6 +145,18 @@ export type PlPlanEntry = {
   sort_order: number;
 };
 
+// 案件設定：月 × メンバー × 案件の目標件数・有効率（%）
+export type ProjectAssignment = {
+  id: string;
+  month: string;
+  staff_id: string;
+  project_id: string;
+  target_quantity: number;
+  effective_rate: number;
+  memo: string | null;
+  sort_order: number;
+};
+
 // 結果の手入力値（pl_actual_entries）。形は計画と同じ
 export type PlActualEntry = PlPlanEntry;
 

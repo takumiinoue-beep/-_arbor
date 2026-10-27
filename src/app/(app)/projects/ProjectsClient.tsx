@@ -3,8 +3,7 @@
 import { Fragment, useMemo, useState } from "react";
 import Link from "next/link";
 import type { PriceRate, Profile, ProjectStatus, ProjectWithStaff } from "@/types/database";
-import { formatCurrency, formatPercent } from "@/lib/format";
-import { getEffectiveCounts } from "@/lib/aggregate";
+import { formatCurrency } from "@/lib/format";
 import { DeleteProjectButton } from "./DeleteProjectButton";
 
 function rateRangeLabel(rate: PriceRate) {
@@ -76,22 +75,6 @@ export function ProjectsClient({
       })
       .sort((a, b) => STATUS_ORDER[a.status] - STATUS_ORDER[b.status]);
   }, [projects, keyword, staffId, status, monthTab]);
-
-  const totals = useMemo(() => {
-    return filtered.reduce(
-      (acc, p) => {
-        const { budgetQty, actualQty, confirmedQty, confirmedAmount } = getEffectiveCounts(p);
-        acc.budget += p.budget;
-        acc.actual += p.actual;
-        acc.budgetQty += budgetQty;
-        acc.actualQty += actualQty;
-        acc.confirmedQty += confirmedQty;
-        acc.confirmedAmount += confirmedAmount;
-        return acc;
-      },
-      { budget: 0, actual: 0, budgetQty: 0, actualQty: 0, confirmedQty: 0, confirmedAmount: 0 }
-    );
-  }, [filtered]);
 
   return (
     <div className="flex flex-col gap-4">
@@ -175,18 +158,13 @@ export function ProjectsClient({
       </div>
 
       <div className="overflow-x-auto rounded-lg border border-slate-200 bg-white">
-        <table className="w-full min-w-[1600px] whitespace-nowrap divide-y divide-slate-200 text-sm">
+        <table className="w-full whitespace-nowrap divide-y divide-slate-200 text-sm">
           <thead className="bg-slate-50">
             <tr>
               <th className="px-3 py-2 text-left font-medium text-slate-500">案件名</th>
               <th className="px-3 py-2 text-left font-medium text-slate-500">担当者</th>
               <th className="px-3 py-2 text-left font-medium text-slate-500">期間</th>
-              <th className="px-3 py-2 text-right font-medium text-slate-500">予算</th>
-              <th className="px-3 py-2 text-right font-medium text-slate-500">実績</th>
-              <th className="px-3 py-2 text-right font-medium text-slate-500">確定件数</th>
-              <th className="px-3 py-2 text-right font-medium text-slate-500">有効率</th>
-              <th className="px-3 py-2 text-right font-medium text-slate-500">差異</th>
-              <th className="px-3 py-2 text-right font-medium text-slate-500">達成率</th>
+              <th className="px-3 py-2 text-right font-medium text-slate-500">単価</th>
               <th className="px-3 py-2 text-left font-medium text-slate-500">ステータス</th>
               <th className="px-3 py-2 text-left font-medium text-slate-500">備考</th>
               <th className="px-3 py-2 text-left font-medium text-slate-500">操作</th>
@@ -194,15 +172,14 @@ export function ProjectsClient({
           </thead>
           <tbody className="divide-y divide-slate-100">
             {filtered.map((p) => {
-              const diff = p.actual - p.budget;
               const rates = sortedRates(p.price_rates);
               const hasRates = rates.length > 0;
-              const {
-                budgetQty: totalBudgetQty,
-                actualQty: totalActualQty,
-                confirmedQty: totalConfirmedQty,
-                confirmedAmount: totalConfirmedAmount,
-              } = getEffectiveCounts(p);
+              const prices = rates.map((r) => r.unit_price);
+              const unitText = hasRates
+                ? Math.min(...prices) === Math.max(...prices)
+                  ? formatCurrency(prices[0])
+                  : `${formatCurrency(Math.min(...prices))}〜${formatCurrency(Math.max(...prices))}`
+                : formatCurrency(p.unit_price);
               return (
                 <Fragment key={p.id}>
                   <tr className="hover:bg-slate-50">
@@ -224,56 +201,7 @@ export function ProjectsClient({
                       {p.start_date}
                       {p.end_date ? ` ～ ${p.end_date}` : ""}
                     </td>
-                    <td className="px-3 py-2 text-right">
-                      {hasRates ? (
-                        <div className="flex items-center gap-1">
-                          <span className="text-slate-700">{totalBudgetQty}件</span>
-                          <span className="ml-auto text-xs text-slate-400">{formatCurrency(p.budget)}</span>
-                        </div>
-                      ) : (
-                        <span className="text-slate-700">
-                          {formatCurrency(p.budget)}
-                          <span className="ml-1 text-xs text-slate-400">({p.quantity}件)</span>
-                        </span>
-                      )}
-                    </td>
-                    <td className="px-3 py-2 text-right">
-                      {hasRates ? (
-                        <div className="flex items-center gap-1">
-                          <span className="text-slate-700">{totalActualQty}件</span>
-                          <span className="ml-auto text-xs text-slate-400">{formatCurrency(p.actual)}</span>
-                        </div>
-                      ) : (
-                        <span className="text-slate-700">
-                          {formatCurrency(p.actual)}
-                          <span className="ml-1 text-xs text-slate-400">({p.actual_quantity}件)</span>
-                        </span>
-                      )}
-                    </td>
-                    <td className="px-3 py-2 text-right">
-                      {hasRates ? (
-                        <div className="flex items-center gap-1">
-                          <span className="text-slate-700">{totalConfirmedQty}件</span>
-                          <span className="ml-auto text-xs text-slate-400">{formatCurrency(totalConfirmedAmount)}</span>
-                        </div>
-                      ) : (
-                        <span className="text-slate-700">
-                          {formatCurrency(totalConfirmedAmount)}
-                          <span className="ml-1 text-xs text-slate-400">({p.confirmed_quantity}件)</span>
-                        </span>
-                      )}
-                    </td>
-                    <td className="px-3 py-2 text-right text-slate-700">
-                      {formatPercent(totalConfirmedQty, totalActualQty)}
-                    </td>
-                    <td
-                      className={`px-3 py-2 text-right ${diff >= 0 ? "text-emerald-600" : "text-red-600"}`}
-                    >
-                      {formatCurrency(diff)}
-                    </td>
-                    <td className="px-3 py-2 text-right text-slate-700">
-                      {formatPercent(totalConfirmedAmount, p.budget)}
-                    </td>
+                    <td className="px-3 py-2 text-right text-slate-700">{unitText}</td>
                     <td className="px-3 py-2">
                       <span
                         className={`rounded-full px-2 py-0.5 text-xs ${
@@ -287,7 +215,7 @@ export function ProjectsClient({
                         {p.status}
                       </span>
                     </td>
-                    <td className="max-w-[160px] truncate px-3 py-2 text-slate-500" title={p.notes ?? ""}>
+                    <td className="max-w-[240px] truncate px-3 py-2 text-slate-500" title={p.notes ?? ""}>
                       {p.notes ?? ""}
                     </td>
                     <td className="px-3 py-2">
@@ -306,101 +234,26 @@ export function ProjectsClient({
                   </tr>
                   {hasRates &&
                     expanded.has(p.id) &&
-                    rates.map((r) => {
-                      const rBudget = r.unit_price * r.quantity;
-                      const rActual = r.unit_price * r.actual_quantity;
-                      const rConfirmedAmount = r.unit_price * r.confirmed_quantity;
-                      const rDiff = rActual - rBudget;
-                      return (
-                        <tr key={r.id} className="bg-slate-50/60 text-xs">
-                          <td className="px-3 py-1.5 pl-6 text-slate-500" colSpan={3}>
-                            └ {r.position}（{rateRangeLabel(r)}）
-                          </td>
-                          <td className="px-3 py-1.5 text-right">
-                            <span className="text-slate-500">
-                              {formatCurrency(rBudget)}
-                              <span className="ml-1 text-slate-400">({r.quantity}件)</span>
-                            </span>
-                          </td>
-                          <td className="px-3 py-1.5 text-right">
-                            <span className="text-slate-500">
-                              {formatCurrency(rActual)}
-                              <span className="ml-1 text-slate-400">({r.actual_quantity}件)</span>
-                            </span>
-                          </td>
-                          <td className="px-3 py-1.5 text-right">
-                            <span className="text-slate-500">
-                              {formatCurrency(rConfirmedAmount)}
-                              <span className="ml-1 text-slate-400">({r.confirmed_quantity}件)</span>
-                            </span>
-                          </td>
-                          <td className="px-3 py-1.5 text-right text-slate-500">
-                            {formatPercent(r.confirmed_quantity, r.actual_quantity)}
-                          </td>
-                          <td
-                            className={`px-3 py-1.5 text-right ${rDiff >= 0 ? "text-emerald-600" : "text-red-600"}`}
-                          >
-                            {formatCurrency(rDiff)}
-                          </td>
-                          <td className="px-3 py-1.5 text-right text-slate-500">
-                            {formatPercent(rConfirmedAmount, rBudget)}
-                          </td>
-                          <td colSpan={3} />
-                        </tr>
-                      );
-                    })}
+                    rates.map((r) => (
+                      <tr key={r.id} className="bg-slate-50/60 text-xs">
+                        <td className="px-3 py-1.5 pl-9 text-slate-500" colSpan={3}>
+                          └ {r.position}（{rateRangeLabel(r)}）
+                        </td>
+                        <td className="px-3 py-1.5 text-right text-slate-600">{formatCurrency(r.unit_price)}</td>
+                        <td colSpan={3} />
+                      </tr>
+                    ))}
                 </Fragment>
               );
             })}
             {filtered.length === 0 && (
               <tr>
-                <td colSpan={12} className="px-3 py-6 text-center text-slate-400">
+                <td colSpan={7} className="px-3 py-6 text-center text-slate-400">
                   該当する案件がありません
                 </td>
               </tr>
             )}
           </tbody>
-          {filtered.length > 0 && (
-            <tfoot className="bg-slate-50 font-medium">
-              <tr>
-                <td className="px-3 py-2" colSpan={3}>
-                  合計（{filtered.length}件）
-                </td>
-                <td className="px-3 py-2 text-right">
-                  <div className="flex items-center gap-1">
-                    <span>{totals.budgetQty}件</span>
-                    <span className="ml-auto">{formatCurrency(totals.budget)}</span>
-                  </div>
-                </td>
-                <td className="px-3 py-2 text-right">
-                  <div className="flex items-center gap-1">
-                    <span>{totals.actualQty}件</span>
-                    <span className="ml-auto">{formatCurrency(totals.actual)}</span>
-                  </div>
-                </td>
-                <td className="px-3 py-2 text-right">
-                  <div className="flex items-center gap-1">
-                    <span>{totals.confirmedQty}件</span>
-                    <span className="ml-auto">{formatCurrency(totals.confirmedAmount)}</span>
-                  </div>
-                </td>
-                <td className="px-3 py-2 text-right">
-                  {formatPercent(totals.confirmedQty, totals.actualQty)}
-                </td>
-                <td
-                  className={`px-3 py-2 text-right ${
-                    totals.actual - totals.budget >= 0 ? "text-emerald-600" : "text-red-600"
-                  }`}
-                >
-                  {formatCurrency(totals.actual - totals.budget)}
-                </td>
-                <td className="px-3 py-2 text-right">
-                  {formatPercent(totals.confirmedAmount, totals.budget)}
-                </td>
-                <td colSpan={3} />
-              </tr>
-            </tfoot>
-          )}
         </table>
       </div>
     </div>

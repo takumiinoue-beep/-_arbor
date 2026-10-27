@@ -26,7 +26,7 @@ export default async function ProjectsPage() {
   return (
     <div className="flex flex-col gap-6">
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <h1 className="text-lg font-bold text-slate-900">案件一覧</h1>
+        <h1 className="text-lg font-bold text-slate-900">案件一覧（案件の登録）</h1>
         {profile.role === "admin" && <CarryOverButton defaultMonth={nextMonth} />}
       </div>
       <ProjectsClient

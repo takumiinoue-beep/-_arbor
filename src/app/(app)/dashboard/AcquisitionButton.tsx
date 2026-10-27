@@ -6,7 +6,7 @@ import Modal from "@/components/common/Modal";
 import type { PriceRate, Profile, Project } from "@/types/database";
 import { formatCurrency } from "@/lib/format";
 import { formatYearMonth } from "@/lib/period";
-import { needsMonthlyCopy } from "@/lib/projectMonths";
+import { needsMonthlyCopy, pickVersion } from "@/lib/projectMonths";
 import { createAcquisition } from "./actions";
 
 function toToday(): string {
@@ -45,17 +45,6 @@ function findMatchingRate(project: AcquisitionProject | undefined, position: str
 }
 
 const ym = (date: string) => date.slice(0, 7);
-
-// 同じ案件名の中から、計上月に当てはまる期間の案件を選ぶ
-// （期間内のもの → 無ければ計上月以前で最も新しいもの → 無ければ一番早いもの）
-function pickVersion(versions: AcquisitionProject[], targetMonth: string): AcquisitionProject | undefined {
-  const byStartDesc = [...versions].sort((a, b) => b.start_date.localeCompare(a.start_date));
-  return (
-    byStartDesc.find((p) => ym(p.start_date) <= targetMonth && (!p.end_date || ym(p.end_date) >= targetMonth)) ??
-    byStartDesc.find((p) => ym(p.start_date) <= targetMonth) ??
-    byStartDesc[byStartDesc.length - 1]
-  );
-}
 
 function versionLabel(p: AcquisitionProject): string {
   const start = formatYearMonth(ym(p.start_date));
