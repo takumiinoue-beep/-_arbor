@@ -3,6 +3,7 @@
 import { Fragment, useMemo, useState, useTransition } from "react";
 import type { Acquisition, ConfirmedQuantity, Profile, ProjectAssignment } from "@/types/database";
 import { formatCurrency } from "@/lib/format";
+import { Progress } from "@/components/common/Progress";
 import { acquisitionMonth } from "@/lib/sales";
 import { AcquisitionButton, type AcquisitionProject } from "./AcquisitionButton";
 import { DeleteAcquisitionButton } from "./DeleteAcquisitionButton";
@@ -65,7 +66,6 @@ type Group = {
 const sum = <T,>(list: T[], f: (r: T) => number) => list.reduce((acc, r) => acc + f(r), 0);
 const cmp = (a: string, b: string) => a.localeCompare(b, "ja");
 const qtyText = (n: number) => `${Math.round(n * 10) / 10}件`;
-const rateText = (n: number) => `${Math.round(n * 100) / 100}%`;
 
 // OP × 案件 ごとに、案件設定の件数と、獲得の登録（件数・金額）、単価ごとの有効件数・確定金額をまとめる。
 function buildCells(args: {
@@ -221,23 +221,6 @@ function groupCells(cells: Cell[], view: View): Group[] {
     confirmedQty: sum(list, (c) => c.confirmedQty),
     confirmedAmount: sum(list, (c) => c.confirmedAmount),
   })).sort((a, b) => cmp(a.label, b.label));
-}
-
-// 進捗率（獲得件数 ÷ 案件設定の件数）の数字と棒
-function Progress({ acquired, target }: { acquired: number; target: number }) {
-  if (target <= 0) return <span className="text-slate-300">-</span>;
-  const ratio = (acquired / target) * 100;
-  return (
-    <div className="flex items-center justify-end gap-2">
-      <div className="h-1.5 w-14 overflow-hidden rounded-full bg-slate-200">
-        <div
-          className={`h-full rounded-full ${ratio >= 100 ? "bg-emerald-500" : "bg-sky-500"}`}
-          style={{ width: `${Math.min(100, ratio)}%` }}
-        />
-      </div>
-      <span className="w-14 text-right">{rateText(ratio)}</span>
-    </div>
-  );
 }
 
 // 獲得件数の数字。カーソルを当てると、登録日ごとの件数を表示する（管理者は、そこから登録の削除もできる）

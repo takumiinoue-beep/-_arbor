@@ -2,6 +2,7 @@
 
 import { Fragment, useMemo, useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
+import { Progress } from "@/components/common/Progress";
 import { formatCurrency } from "@/lib/format";
 import { defaultUnitPrice, latestByName } from "@/lib/projects";
 import { acquisitionMonth } from "@/lib/sales";
@@ -395,7 +396,7 @@ export function ProjectSettingsClient({
                         {c.project ? (c.target > 0 ? `${c.remaining}件` : "-") : ""}
                       </td>
                       <td className="border-l border-slate-200 px-3 py-1.5 text-right">
-                        {c.project ? (c.progress === null ? "-" : pct(c.progress)) : ""}
+                        {c.project ? <Progress acquired={c.current} target={c.target} /> : ""}
                       </td>
                       <td className="border-l border-slate-200 px-3 py-1.5 text-right">
                         {c.project ? formatCurrency(c.unit) : ""}
