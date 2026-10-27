@@ -31,7 +31,7 @@ export default async function DashboardPage() {
         .range(from, to)
         .overrideTypes<AcquisitionRow[], { merge: false }>()
     ),
-    supabase.from("project_assignments").select("month, staff_id, project_id, target_quantity, effective_rate"),
+    supabase.from("project_assignments").select("month, staff_id, project_id, target_quantity"),
   ]);
 
   const todayISO = new Date().toISOString().slice(0, 10);
@@ -42,10 +42,7 @@ export default async function DashboardPage() {
       <DashboardClient
         projects={(projects as AcquisitionProject[]) ?? []}
         assignments={
-          (assignments as Pick<
-            ProjectAssignment,
-            "month" | "staff_id" | "project_id" | "target_quantity" | "effective_rate"
-          >[]) ?? []
+          (assignments as Pick<ProjectAssignment, "month" | "staff_id" | "project_id" | "target_quantity">[]) ?? []
         }
         staffList={(staffList as Pick<Profile, "id" | "name">[]) ?? []}
         acquisitions={acquisitions}

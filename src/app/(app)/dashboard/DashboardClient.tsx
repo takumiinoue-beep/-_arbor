@@ -3,7 +3,6 @@
 import { Fragment, useMemo, useState } from "react";
 import type { Acquisition, Profile, ProjectAssignment } from "@/types/database";
 import { formatCurrency } from "@/lib/format";
-import { createRateResolver } from "@/lib/projects";
 import { acquisitionMonth } from "@/lib/sales";
 import { AcquisitionButton, type AcquisitionProject } from "./AcquisitionButton";
 import { DeleteAcquisitionButton } from "./DeleteAcquisitionButton";
@@ -16,7 +15,7 @@ export type AcquisitionRow = Pick<
   staff: { id: string; name: string } | null;
 };
 
-type DashboardAssignment = Pick<ProjectAssignment, "month" | "staff_id" | "project_id" | "target_quantity" | "effective_rate">;
+type DashboardAssignment = Pick<ProjectAssignment, "month" | "staff_id" | "project_id" | "target_quantity">;
 
 type SalesEntry = { id: string; acquiredDate: string; quantity: number };
 
@@ -26,8 +25,6 @@ type Leaf = {
   unitPrice: number;
   acquiredQty: number;
   acquiredAmount: number;
-  effectiveQty: number;
-  effectiveAmount: number;
   entries: SalesEntry[];
 };
 
@@ -38,12 +35,9 @@ type Cell = {
   opName: string;
   projectName: string;
   target: number; // 案件設定の件数
-  rate: number; // 有効率（%）
   leaves: Leaf[];
   acquiredQty: number;
   acquiredAmount: number;
-  effectiveQty: number;
-  effectiveAmount: number;
 };
 
 // 表示の切り替え：OPごと（OP→案件）／案件ごと（案件→OP）
@@ -56,8 +50,6 @@ type Group = {
   target: number;
   acquiredQty: number;
   acquiredAmount: number;
-  effectiveQty: number;
-  effectiveAmount: number;
 };
 
 const sum = <T,>(list: T[], f: (r: T) => number) => list.reduce((acc, r) => acc + f(r), 0);
@@ -65,17 +57,14 @@ const cmp = (a: string, b: string) => a.localeCompare(b, "ja");
 const qtyText = (n: number) => `${Math.round(n * 10) / 10}件`;
 const rateText = (n: number) => `${Math.round(n * 100) / 100}%`;
 
-// OP × 案件 ごとに、案件設定の件数と、獲得の登録（件数・金額・有効件数・有効金額）をまとめる。
-// 有効件数＝獲得件数×有効率、有効金額＝獲得金額×有効率。有効率は、その月のOPの案件設定にあればそれ、無ければ案件一覧の有効率。
+// OP × 案件 ごとに、案件設定の件数と、獲得の登録（件数・金額）をまとめる。
 function buildCells(args: {
   acquisitions: AcquisitionRow[]; // 表示する期間の獲得
   assignments: DashboardAssignment[]; // 表示する期間の案件設定
   nameById: Map<string, string>;
   staffName: Map<string, string>;
-  rateOf: (month: string, staffId: string, projectId: string) => number;
-  defaultRateByName: Map<string, number>;
 }): Cell[] {
-  const { acquisitions, assignments, nameById, staffName, rateOf, defaultRateByName } = args;
+  const { acquisitions, assignments, nameById, staffName } = args;
   const cells = new Map<string, Cell>();
 
   const cellFor = (staffId: string, projectName: string, opName: string): Cell => {
@@ -88,12 +77,9 @@ function buildCells(args: {
         opName,
         projectName,
         target: 0,
-        rate: defaultRateByName.get(projectName) ?? 100,
         leaves: [],
         acquiredQty: 0,
         acquiredAmount: 0,
-        effectiveQty: 0,
-        effectiveAmount: 0,
       };
       cells.set(key, cell);
     }
@@ -105,23 +91,19 @@ function buildCells(args: {
     if (!name) continue;
     const cell = cellFor(as.staff_id, name, staffName.get(as.staff_id) ?? "不明");
     cell.target += as.target_quantity;
-    cell.rate = Number(as.effective_rate);
   }
 
   for (const a of acquisitions) {
     const name = a.project?.name ?? "(削除済み案件)";
     const cell = cellFor(a.staff_id, name, a.staff?.name ?? "不明");
-    const rate = rateOf(acquisitionMonth(a), a.staff_id, a.project_id);
     const leafKey = `${cell.key}|${a.unit_price}`;
     let leaf = cell.leaves.find((l) => l.key === leafKey);
     if (!leaf) {
-      leaf = { key: leafKey, unitPrice: a.unit_price, acquiredQty: 0, acquiredAmount: 0, effectiveQty: 0, effectiveAmount: 0, entries: [] };
+      leaf = { key: leafKey, unitPrice: a.unit_price, acquiredQty: 0, acquiredAmount: 0, entries: [] };
       cell.leaves.push(leaf);
     }
     leaf.acquiredQty += a.quantity;
     leaf.acquiredAmount += Number(a.amount);
-    leaf.effectiveQty += (a.quantity * rate) / 100;
-    leaf.effectiveAmount += (Number(a.amount) * rate) / 100;
     leaf.entries.push({ id: a.id, acquiredDate: a.acquired_date, quantity: a.quantity });
   }
 
@@ -130,10 +112,6 @@ function buildCells(args: {
     for (const leaf of cell.leaves) leaf.entries.sort((a, b) => b.acquiredDate.localeCompare(a.acquiredDate));
     cell.acquiredQty = sum(cell.leaves, (l) => l.acquiredQty);
     cell.acquiredAmount = sum(cell.leaves, (l) => l.acquiredAmount);
-    cell.effectiveQty = sum(cell.leaves, (l) => l.effectiveQty);
-    cell.effectiveAmount = sum(cell.leaves, (l) => l.effectiveAmount);
-    // 複数の月をまとめて見るときなどは、有効件数÷獲得件数を有効率として表示する
-    if (cell.acquiredQty > 0) cell.rate = (cell.effectiveQty / cell.acquiredQty) * 100;
   }
 
   return Array.from(cells.values());
@@ -209,8 +187,6 @@ function groupCells(cells: Cell[], view: View): Group[] {
     target: sum(list, (c) => c.target),
     acquiredQty: sum(list, (c) => c.acquiredQty),
     acquiredAmount: sum(list, (c) => c.acquiredAmount),
-    effectiveQty: sum(list, (c) => c.effectiveQty),
-    effectiveAmount: sum(list, (c) => c.effectiveAmount),
   })).sort((a, b) => cmp(a.label, b.label));
 }
 
@@ -288,17 +264,6 @@ export function DashboardClient({
 
   const nameById = useMemo(() => new Map(projects.map((p) => [p.id, p.name])), [projects]);
   const staffName = useMemo(() => new Map(staffList.map((s) => [s.id, s.name])), [staffList]);
-  const rateOf = useMemo(() => createRateResolver(projects, assignments), [projects, assignments]);
-  const defaultRateByName = useMemo(() => {
-    const map = new Map<string, number>();
-    const latest = new Map<string, AcquisitionProject>();
-    for (const p of projects) {
-      const cur = latest.get(p.name);
-      if (!cur || p.start_date > cur.start_date) latest.set(p.name, p);
-    }
-    for (const [name, p] of latest) map.set(name, Number(p.effective_rate));
-    return map;
-  }, [projects]);
 
   const cells = useMemo(
     () =>
@@ -307,10 +272,8 @@ export function DashboardClient({
         assignments: filteredAssignments,
         nameById,
         staffName,
-        rateOf,
-        defaultRateByName,
       }),
-    [filteredAcquisitions, filteredAssignments, nameById, staffName, rateOf, defaultRateByName]
+    [filteredAcquisitions, filteredAssignments, nameById, staffName]
   );
   const groups = useMemo(() => groupCells(cells, view), [cells, view]);
 
@@ -345,8 +308,6 @@ export function DashboardClient({
       target: sum(cells, (c) => c.target),
       acquiredQty: sum(cells, (c) => c.acquiredQty),
       acquiredAmount: sum(cells, (c) => c.acquiredAmount),
-      effectiveQty: sum(cells, (c) => c.effectiveQty),
-      effectiveAmount: sum(cells, (c) => c.effectiveAmount),
     }),
     [cells]
   );
@@ -356,7 +317,7 @@ export function DashboardClient({
   const midHeader = view === "op" ? "案件名" : "OP";
   const topKind = view === "op" ? "OP" : "案件";
   const midLabel = (c: Cell) => (view === "op" ? c.projectName : c.opName);
-  const COLS = 8;
+  const COLS = 5;
 
   return (
     <div className="flex flex-col gap-6">
@@ -419,10 +380,7 @@ export function DashboardClient({
               <th className="px-3 py-2 text-right font-medium text-slate-500">設定件数</th>
               <th className="px-3 py-2 text-right font-medium text-slate-500">獲得件数</th>
               <th className="px-3 py-2 text-right font-medium text-slate-500">進捗率</th>
-              <th className="px-3 py-2 text-right font-medium text-slate-500">有効率</th>
-              <th className="px-3 py-2 text-right font-medium text-slate-500">有効件数</th>
               <th className="px-3 py-2 text-right font-medium text-slate-500">獲得金額</th>
-              <th className="px-3 py-2 text-right font-medium text-slate-500">有効金額</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-100">
@@ -461,12 +419,7 @@ export function DashboardClient({
                         <td className="px-3 py-2 text-right text-slate-700">
                           <Progress acquired={cell.acquiredQty} target={cell.target} />
                         </td>
-                        <td className="px-3 py-2 text-right text-slate-500">{rateText(cell.rate)}</td>
-                        <td className="px-3 py-2 text-right text-slate-700">{qtyText(cell.effectiveQty)}</td>
                         <td className="px-3 py-2 text-right text-slate-700">{formatCurrency(cell.acquiredAmount)}</td>
-                        <td className="px-3 py-2 text-right font-medium text-slate-900">
-                          {formatCurrency(Math.round(cell.effectiveAmount))}
-                        </td>
                       </tr>
                       {expanded.has(cellKey) &&
                         cell.leaves.map((leaf) => {
@@ -489,13 +442,9 @@ export function DashboardClient({
                                 </td>
                                 <td className="px-3 py-1.5" />
                                 <td className="px-3 py-1.5 text-right text-slate-600">{qtyText(leaf.acquiredQty)}</td>
-                                <td className="px-3 py-1.5" colSpan={2} />
-                                <td className="px-3 py-1.5 text-right text-slate-600">{qtyText(leaf.effectiveQty)}</td>
+                                <td className="px-3 py-1.5" />
                                 <td className="px-3 py-1.5 text-right text-slate-600">
                                   {formatCurrency(leaf.acquiredAmount)}
-                                </td>
-                                <td className="px-3 py-1.5 text-right font-medium text-slate-800">
-                                  {formatCurrency(Math.round(leaf.effectiveAmount))}
                                 </td>
                               </tr>
                               {expanded.has(leafKey) &&
@@ -504,16 +453,12 @@ export function DashboardClient({
                                     <td className="px-3 py-1 pl-16 text-slate-500">└ {e.acquiredDate}</td>
                                     <td className="px-3 py-1" />
                                     <td className="px-3 py-1 text-right text-slate-500">{e.quantity}件</td>
-                                    <td className="px-3 py-1" colSpan={3} />
+                                    <td className="px-3 py-1" />
                                     <td className="px-3 py-1 text-right text-slate-500">
-                                      {formatCurrency(e.quantity * leaf.unitPrice)}
-                                    </td>
-                                    <td className="px-3 py-1">
-                                      {isAdmin && (
-                                        <div className="flex justify-end">
-                                          <DeleteAcquisitionButton id={e.id} />
-                                        </div>
-                                      )}
+                                      <div className="flex items-center justify-end gap-2">
+                                        {formatCurrency(e.quantity * leaf.unitPrice)}
+                                        {isAdmin && <DeleteAcquisitionButton id={e.id} />}
+                                      </div>
                                     </td>
                                   </tr>
                                 ))}
@@ -530,12 +475,7 @@ export function DashboardClient({
                   <td className="px-3 py-2 text-right">
                     <Progress acquired={group.acquiredQty} target={group.target} />
                   </td>
-                  <td className="px-3 py-2 text-right">
-                    {group.acquiredQty > 0 ? rateText((group.effectiveQty / group.acquiredQty) * 100) : "-"}
-                  </td>
-                  <td className="px-3 py-2 text-right">{qtyText(group.effectiveQty)}</td>
                   <td className="px-3 py-2 text-right">{formatCurrency(group.acquiredAmount)}</td>
-                  <td className="px-3 py-2 text-right">{formatCurrency(Math.round(group.effectiveAmount))}</td>
                 </tr>
               </Fragment>
             ))}
@@ -556,19 +496,14 @@ export function DashboardClient({
                 <td className="px-3 py-2 text-right">
                   <Progress acquired={totals.acquiredQty} target={totals.target} />
                 </td>
-                <td className="px-3 py-2 text-right">
-                  {totals.acquiredQty > 0 ? rateText((totals.effectiveQty / totals.acquiredQty) * 100) : "-"}
-                </td>
-                <td className="px-3 py-2 text-right">{qtyText(totals.effectiveQty)}</td>
                 <td className="px-3 py-2 text-right">{formatCurrency(totals.acquiredAmount)}</td>
-                <td className="px-3 py-2 text-right">{formatCurrency(Math.round(totals.effectiveAmount))}</td>
               </tr>
             </tfoot>
           )}
         </table>
       </div>
       <p className="-mt-3 text-xs text-slate-400">
-        {topKind}ごとにまとめています。設定件数は「案件設定」で決めた件数、獲得件数は案件獲得の登録の合計です。進捗率＝獲得件数÷設定件数、有効件数＝獲得件数×有効率、有効金額＝獲得金額×有効率です。
+        {topKind}ごとにまとめています。設定件数は「案件設定」で決めた件数、獲得件数は案件獲得の登録の合計です。進捗率＝獲得件数÷設定件数です。
         行の▶を押すと単価ごとの件数、さらに押すと登録日ごとの内訳が見えます。
       </p>
 
