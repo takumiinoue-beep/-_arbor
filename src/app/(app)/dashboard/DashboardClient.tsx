@@ -4,6 +4,7 @@ import { Fragment, useMemo, useState, useTransition } from "react";
 import type { Acquisition, ConfirmedQuantity, Profile, ProjectAssignment } from "@/types/database";
 import { formatCurrency } from "@/lib/format";
 import { Progress } from "@/components/common/Progress";
+import { defaultUnitPrice, latestByName } from "@/lib/projects";
 import { acquisitionMonth } from "@/lib/sales";
 import { AcquisitionButton, type AcquisitionProject } from "./AcquisitionButton";
 import { DeleteAcquisitionButton } from "./DeleteAcquisitionButton";
@@ -42,6 +43,7 @@ type Cell = {
   opName: string;
   projectName: string;
   target: number; // 案件設定の件数
+  targetAmount: number; // 設定金額＝設定件数×デフォルト単価
   leaves: Leaf[];
   acquiredQty: number;
   acquiredAmount: number;
@@ -57,6 +59,7 @@ type Group = {
   label: string;
   cells: Cell[];
   target: number;
+  targetAmount: number;
   acquiredQty: number;
   acquiredAmount: number;
   confirmedQty: number;
@@ -74,8 +77,9 @@ function buildCells(args: {
   nameById: Map<string, string>;
   staffName: Map<string, string>;
   confirmed: ConfirmedQuantity[];
+  defaultPriceByName: Map<string, number>; // 案件名 → デフォルト単価
 }): Cell[] {
-  const { acquisitions, assignments, nameById, staffName, confirmed } = args;
+  const { acquisitions, assignments, nameById, staffName, confirmed, defaultPriceByName } = args;
   const confirmedBy = new Map(
     confirmed.map((c) => [`${c.month.slice(0, 7)}|${c.staff_id}|${c.project_name}|${c.unit_price}`, Number(c.quantity)])
   );
@@ -91,6 +95,7 @@ function buildCells(args: {
         opName,
         projectName,
         target: 0,
+        targetAmount: 0,
         leaves: [],
         acquiredQty: 0,
         acquiredAmount: 0,
@@ -137,6 +142,7 @@ function buildCells(args: {
   }
 
   for (const cell of cells.values()) {
+    cell.targetAmount = cell.target * (defaultPriceByName.get(cell.projectName) ?? 0);
     cell.leaves.sort((a, b) => a.month.localeCompare(b.month) || b.unitPrice - a.unitPrice);
     for (const leaf of cell.leaves) leaf.entries.sort((a, b) => b.acquiredDate.localeCompare(a.acquiredDate));
     cell.acquiredQty = sum(cell.leaves, (l) => l.acquiredQty);
@@ -216,6 +222,7 @@ function groupCells(cells: Cell[], view: View): Group[] {
     label,
     cells: list.sort((a, b) => cmp(midOf(a), midOf(b))),
     target: sum(list, (c) => c.target),
+    targetAmount: sum(list, (c) => c.targetAmount),
     acquiredQty: sum(list, (c) => c.acquiredQty),
     acquiredAmount: sum(list, (c) => c.acquiredAmount),
     confirmedQty: sum(list, (c) => c.confirmedQty),
@@ -379,6 +386,11 @@ export function DashboardClient({
   const nameById = useMemo(() => new Map(projects.map((p) => [p.id, p.name])), [projects]);
   const staffName = useMemo(() => new Map(staffList.map((s) => [s.id, s.name])), [staffList]);
 
+  const defaultPriceByName = useMemo(
+    () => new Map(Array.from(latestByName(projects), ([name, p]) => [name, defaultUnitPrice(p)] as const)),
+    [projects]
+  );
+
   const cells = useMemo(
     () =>
       buildCells({
@@ -387,8 +399,9 @@ export function DashboardClient({
         nameById,
         staffName,
         confirmed,
+        defaultPriceByName,
       }),
-    [filteredAcquisitions, filteredAssignments, nameById, staffName, confirmed]
+    [filteredAcquisitions, filteredAssignments, nameById, staffName, confirmed, defaultPriceByName]
   );
   const groups = useMemo(() => groupCells(cells, view), [cells, view]);
 
@@ -421,6 +434,7 @@ export function DashboardClient({
   const totals = useMemo(
     () => ({
       target: sum(cells, (c) => c.target),
+      targetAmount: sum(cells, (c) => c.targetAmount),
       acquiredQty: sum(cells, (c) => c.acquiredQty),
       acquiredAmount: sum(cells, (c) => c.acquiredAmount),
       confirmedQty: sum(cells, (c) => c.confirmedQty),
@@ -434,7 +448,7 @@ export function DashboardClient({
   const midHeader = view === "op" ? "案件名" : "OP";
   const topKind = view === "op" ? "OP" : "案件";
   const midLabel = (c: Cell) => (view === "op" ? c.projectName : c.opName);
-  const COLS = 7;
+  const COLS = 8;
 
   return (
     <div className="flex flex-col gap-6">
@@ -495,6 +509,7 @@ export function DashboardClient({
             <tr>
               <th className="px-3 py-2 text-left font-medium text-slate-500">{midHeader}</th>
               <th className="px-3 py-2 text-right font-medium text-slate-500">設定件数</th>
+              <th className="px-3 py-2 text-right font-medium text-slate-500">設定金額</th>
               <th className="px-3 py-2 text-right font-medium text-slate-500">獲得件数</th>
               <th className="px-3 py-2 text-right font-medium text-slate-500">進捗率</th>
               <th className="px-3 py-2 text-right font-medium text-slate-500">獲得金額</th>
@@ -534,6 +549,7 @@ export function DashboardClient({
                           )}
                         </td>
                         <td className="px-3 py-2 text-right text-slate-700">{qtyText(cell.target)}</td>
+                        <td className="px-3 py-2 text-right text-slate-700">{formatCurrency(cell.targetAmount)}</td>
                         <td className="px-3 py-2 text-right text-slate-700">
                           <QtyWithDetail
                             qty={cell.acquiredQty}
@@ -559,7 +575,7 @@ export function DashboardClient({
                                 <td className="px-3 py-1.5 pl-9 text-slate-600">
                                   {monthTab === "all" && `${monthText(leaf.month)}　`}単価 {formatCurrency(leaf.unitPrice)}
                                 </td>
-                                <td className="px-3 py-1.5" />
+                                <td className="px-3 py-1.5" colSpan={2} />
                                 <td className="px-3 py-1.5 text-right text-slate-600">
                                   <QtyWithDetail qty={leaf.acquiredQty} entries={leaf.entries} isAdmin={isAdmin} />
                                 </td>
@@ -583,6 +599,7 @@ export function DashboardClient({
                 <tr className="border-t-2 border-slate-300 bg-slate-200 font-bold text-slate-900">
                   <td className="px-3 py-2">{group.label}　小計</td>
                   <td className="px-3 py-2 text-right">{qtyText(group.target)}</td>
+                  <td className="px-3 py-2 text-right">{formatCurrency(group.targetAmount)}</td>
                   <td className="px-3 py-2 text-right">{qtyText(group.acquiredQty)}</td>
                   <td className="px-3 py-2 text-right">
                     <Progress acquired={group.acquiredQty} target={group.target} />
@@ -606,6 +623,7 @@ export function DashboardClient({
               <tr>
                 <td className="px-3 py-2">合計</td>
                 <td className="px-3 py-2 text-right">{qtyText(totals.target)}</td>
+                <td className="px-3 py-2 text-right">{formatCurrency(totals.targetAmount)}</td>
                 <td className="px-3 py-2 text-right">{qtyText(totals.acquiredQty)}</td>
                 <td className="px-3 py-2 text-right">
                   <Progress acquired={totals.acquiredQty} target={totals.target} />
@@ -619,7 +637,7 @@ export function DashboardClient({
         </table>
       </div>
       <p className="-mt-3 text-xs text-slate-400">
-        {topKind}ごとにまとめています。設定件数は「案件設定」で決めた件数、獲得件数は案件獲得の登録の合計です。進捗率＝獲得件数÷設定件数です。有効件数は、行の▶で開く単価ごとの欄に入力します（管理者のみ）。確定金額＝有効件数×単価です。
+        {topKind}ごとにまとめています。設定件数は「案件設定」で決めた件数、設定金額＝設定件数×案件のデフォルト単価、獲得件数は案件獲得の登録の合計です。進捗率＝獲得件数÷設定件数です。有効件数は、行の▶で開く単価ごとの欄に入力します（管理者のみ）。確定金額＝有効件数×単価です。
         行の▶を押すと単価ごとの件数が見えます。獲得件数にカーソルを当てると、登録日ごとの件数が表示されます。
       </p>
 
