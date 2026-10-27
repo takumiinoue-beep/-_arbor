@@ -113,6 +113,43 @@ export async function createAcquisition(
   return null;
 }
 
+// 単価ごとの有効件数を保存する（管理者のみ）。month は "YYYY-MM"
+export async function setConfirmedQuantity(input: {
+  month: string;
+  staffId: string;
+  projectName: string;
+  unitPrice: number;
+  quantity: number;
+}): Promise<{ error: string } | null> {
+  await requireAdmin();
+
+  if (!/^\d{4}-\d{2}$/.test(input.month)) return { error: "月の形式が不正です。" };
+  if (!Number.isFinite(input.quantity) || input.quantity < 0) return { error: "有効件数は0以上で入力してください。" };
+
+  const supabase = await createClient();
+  const { error } = await supabase.from("confirmed_quantities").upsert(
+    {
+      month: `${input.month}-01`,
+      staff_id: input.staffId,
+      project_name: input.projectName,
+      unit_price: input.unitPrice,
+      quantity: Math.round(input.quantity * 100) / 100,
+      updated_at: new Date().toISOString(),
+    },
+    { onConflict: "month,staff_id,project_name,unit_price" }
+  );
+  if (error) {
+    return {
+      error: error.message.includes("confirmed_quantities")
+        ? "保存できませんでした。マイグレーション 0028 を実行してください。"
+        : `保存できませんでした: ${error.message}`,
+    };
+  }
+
+  revalidatePath("/dashboard");
+  return null;
+}
+
 export async function deleteAcquisition(id: string) {
   await requireAdmin();
   const supabase = await createClient();

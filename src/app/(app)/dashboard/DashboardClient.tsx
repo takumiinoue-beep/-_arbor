@@ -1,11 +1,12 @@
 "use client";
 
-import { Fragment, useMemo, useState } from "react";
-import type { Acquisition, Profile, ProjectAssignment } from "@/types/database";
+import { Fragment, useMemo, useState, useTransition } from "react";
+import type { Acquisition, ConfirmedQuantity, Profile, ProjectAssignment } from "@/types/database";
 import { formatCurrency } from "@/lib/format";
 import { acquisitionMonth } from "@/lib/sales";
 import { AcquisitionButton, type AcquisitionProject } from "./AcquisitionButton";
 import { DeleteAcquisitionButton } from "./DeleteAcquisitionButton";
+import { setConfirmedQuantity } from "./actions";
 
 export type AcquisitionRow = Pick<
   Acquisition,
@@ -19,12 +20,17 @@ type DashboardAssignment = Pick<ProjectAssignment, "month" | "staff_id" | "proje
 
 type SalesEntry = { id: string; acquiredDate: string; quantity: number; unitPrice: number };
 
-// 単価ごとの内訳
+// 月 × 単価ごとの内訳（有効件数は、この単位で手入力する）
 type Leaf = {
   key: string;
+  month: string; // "YYYY-MM"
+  staffId: string;
+  projectName: string;
   unitPrice: number;
   acquiredQty: number;
   acquiredAmount: number;
+  confirmedQty: number; // 有効件数（手入力）
+  confirmedAmount: number; // 確定金額＝有効件数×単価
   entries: SalesEntry[];
 };
 
@@ -38,6 +44,8 @@ type Cell = {
   leaves: Leaf[];
   acquiredQty: number;
   acquiredAmount: number;
+  confirmedQty: number;
+  confirmedAmount: number;
 };
 
 // 表示の切り替え：OPごと（OP→案件）／案件ごと（案件→OP）
@@ -50,6 +58,8 @@ type Group = {
   target: number;
   acquiredQty: number;
   acquiredAmount: number;
+  confirmedQty: number;
+  confirmedAmount: number;
 };
 
 const sum = <T,>(list: T[], f: (r: T) => number) => list.reduce((acc, r) => acc + f(r), 0);
@@ -57,14 +67,18 @@ const cmp = (a: string, b: string) => a.localeCompare(b, "ja");
 const qtyText = (n: number) => `${Math.round(n * 10) / 10}件`;
 const rateText = (n: number) => `${Math.round(n * 100) / 100}%`;
 
-// OP × 案件 ごとに、案件設定の件数と、獲得の登録（件数・金額）をまとめる。
+// OP × 案件 ごとに、案件設定の件数と、獲得の登録（件数・金額）、単価ごとの有効件数・確定金額をまとめる。
 function buildCells(args: {
   acquisitions: AcquisitionRow[]; // 表示する期間の獲得
   assignments: DashboardAssignment[]; // 表示する期間の案件設定
   nameById: Map<string, string>;
   staffName: Map<string, string>;
+  confirmed: ConfirmedQuantity[];
 }): Cell[] {
-  const { acquisitions, assignments, nameById, staffName } = args;
+  const { acquisitions, assignments, nameById, staffName, confirmed } = args;
+  const confirmedBy = new Map(
+    confirmed.map((c) => [`${c.month.slice(0, 7)}|${c.staff_id}|${c.project_name}|${c.unit_price}`, Number(c.quantity)])
+  );
   const cells = new Map<string, Cell>();
 
   const cellFor = (staffId: string, projectName: string, opName: string): Cell => {
@@ -80,6 +94,8 @@ function buildCells(args: {
         leaves: [],
         acquiredQty: 0,
         acquiredAmount: 0,
+        confirmedQty: 0,
+        confirmedAmount: 0,
       };
       cells.set(key, cell);
     }
@@ -96,10 +112,23 @@ function buildCells(args: {
   for (const a of acquisitions) {
     const name = a.project?.name ?? "(削除済み案件)";
     const cell = cellFor(a.staff_id, name, a.staff?.name ?? "不明");
-    const leafKey = `${cell.key}|${a.unit_price}`;
+    const month = acquisitionMonth(a);
+    const leafKey = `${cell.key}|${month}|${a.unit_price}`;
     let leaf = cell.leaves.find((l) => l.key === leafKey);
     if (!leaf) {
-      leaf = { key: leafKey, unitPrice: a.unit_price, acquiredQty: 0, acquiredAmount: 0, entries: [] };
+      const confirmedQty = confirmedBy.get(`${month}|${a.staff_id}|${name}|${a.unit_price}`) ?? 0;
+      leaf = {
+        key: leafKey,
+        month,
+        staffId: a.staff_id,
+        projectName: name,
+        unitPrice: a.unit_price,
+        acquiredQty: 0,
+        acquiredAmount: 0,
+        confirmedQty,
+        confirmedAmount: confirmedQty * a.unit_price,
+        entries: [],
+      };
       cell.leaves.push(leaf);
     }
     leaf.acquiredQty += a.quantity;
@@ -108,10 +137,12 @@ function buildCells(args: {
   }
 
   for (const cell of cells.values()) {
-    cell.leaves.sort((a, b) => b.unitPrice - a.unitPrice);
+    cell.leaves.sort((a, b) => a.month.localeCompare(b.month) || b.unitPrice - a.unitPrice);
     for (const leaf of cell.leaves) leaf.entries.sort((a, b) => b.acquiredDate.localeCompare(a.acquiredDate));
     cell.acquiredQty = sum(cell.leaves, (l) => l.acquiredQty);
     cell.acquiredAmount = sum(cell.leaves, (l) => l.acquiredAmount);
+    cell.confirmedQty = sum(cell.leaves, (l) => l.confirmedQty);
+    cell.confirmedAmount = sum(cell.leaves, (l) => l.confirmedAmount);
   }
 
   return Array.from(cells.values());
@@ -187,6 +218,8 @@ function groupCells(cells: Cell[], view: View): Group[] {
     target: sum(list, (c) => c.target),
     acquiredQty: sum(list, (c) => c.acquiredQty),
     acquiredAmount: sum(list, (c) => c.acquiredAmount),
+    confirmedQty: sum(list, (c) => c.confirmedQty),
+    confirmedAmount: sum(list, (c) => c.confirmedAmount),
   })).sort((a, b) => cmp(a.label, b.label));
 }
 
@@ -254,11 +287,61 @@ function QtyWithDetail({ qty, entries, isAdmin }: { qty: number; entries: SalesE
   );
 }
 
+// 単価ごとの有効件数の入力。管理者のみ編集でき、Enter か枠の外をクリックで保存する
+function ConfirmedInput({ leaf, isAdmin }: { leaf: Leaf; isAdmin: boolean }) {
+  const [value, setValue] = useState(String(leaf.confirmedQty));
+  const [pending, startTransition] = useTransition();
+  if (!isAdmin) return <>{qtyText(leaf.confirmedQty)}</>;
+
+  function save() {
+    const n = Number(value);
+    if (value.trim() === "" || !Number.isFinite(n) || n < 0) {
+      setValue(String(leaf.confirmedQty));
+      return;
+    }
+    if (n === leaf.confirmedQty) return;
+    startTransition(async () => {
+      const result = await setConfirmedQuantity({
+        month: leaf.month,
+        staffId: leaf.staffId,
+        projectName: leaf.projectName,
+        unitPrice: leaf.unitPrice,
+        quantity: n,
+      });
+      if (result?.error) {
+        alert(result.error);
+        setValue(String(leaf.confirmedQty));
+      }
+    });
+  }
+
+  return (
+    <span className="inline-flex items-center gap-1">
+      <input
+        type="number"
+        min={0}
+        step="any"
+        value={value}
+        disabled={pending}
+        onChange={(e) => setValue(e.target.value)}
+        onBlur={save}
+        onKeyDown={(e) => {
+          if (e.key === "Enter") e.currentTarget.blur();
+        }}
+        aria-label="有効件数"
+        className="w-16 rounded border border-slate-300 bg-white px-1.5 py-0.5 text-right text-xs disabled:opacity-50"
+      />
+      件
+    </span>
+  );
+}
+
 export function DashboardClient({
   projects,
   assignments,
   staffList,
   acquisitions,
+  confirmed,
   currentUserId,
   isAdmin,
   todayISO,
@@ -267,6 +350,7 @@ export function DashboardClient({
   assignments: DashboardAssignment[];
   staffList: Pick<Profile, "id" | "name">[];
   acquisitions: AcquisitionRow[];
+  confirmed: ConfirmedQuantity[];
   currentUserId: string;
   isAdmin: boolean;
   todayISO: string;
@@ -319,8 +403,9 @@ export function DashboardClient({
         assignments: filteredAssignments,
         nameById,
         staffName,
+        confirmed,
       }),
-    [filteredAcquisitions, filteredAssignments, nameById, staffName]
+    [filteredAcquisitions, filteredAssignments, nameById, staffName, confirmed]
   );
   const groups = useMemo(() => groupCells(cells, view), [cells, view]);
 
@@ -355,6 +440,8 @@ export function DashboardClient({
       target: sum(cells, (c) => c.target),
       acquiredQty: sum(cells, (c) => c.acquiredQty),
       acquiredAmount: sum(cells, (c) => c.acquiredAmount),
+      confirmedQty: sum(cells, (c) => c.confirmedQty),
+      confirmedAmount: sum(cells, (c) => c.confirmedAmount),
     }),
     [cells]
   );
@@ -364,7 +451,7 @@ export function DashboardClient({
   const midHeader = view === "op" ? "案件名" : "OP";
   const topKind = view === "op" ? "OP" : "案件";
   const midLabel = (c: Cell) => (view === "op" ? c.projectName : c.opName);
-  const COLS = 5;
+  const COLS = 7;
 
   return (
     <div className="flex flex-col gap-6">
@@ -428,6 +515,8 @@ export function DashboardClient({
               <th className="px-3 py-2 text-right font-medium text-slate-500">獲得件数</th>
               <th className="px-3 py-2 text-right font-medium text-slate-500">進捗率</th>
               <th className="px-3 py-2 text-right font-medium text-slate-500">獲得金額</th>
+              <th className="px-3 py-2 text-right font-medium text-slate-500">有効件数</th>
+              <th className="px-3 py-2 text-right font-medium text-slate-500">確定金額</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-100">
@@ -473,6 +562,10 @@ export function DashboardClient({
                           <Progress acquired={cell.acquiredQty} target={cell.target} />
                         </td>
                         <td className="px-3 py-2 text-right text-slate-700">{formatCurrency(cell.acquiredAmount)}</td>
+                        <td className="px-3 py-2 text-right text-slate-700">{qtyText(cell.confirmedQty)}</td>
+                        <td className="px-3 py-2 text-right font-medium text-slate-900">
+                          {formatCurrency(Math.round(cell.confirmedAmount))}
+                        </td>
                       </tr>
                       {expanded.has(cellKey) &&
                         cell.leaves.map((leaf) => {
@@ -481,7 +574,7 @@ export function DashboardClient({
                             <Fragment key={leafKey}>
                               <tr className="bg-slate-50/70 text-xs">
                                 <td className="px-3 py-1.5 pl-9 text-slate-600">
-                                  単価 {formatCurrency(leaf.unitPrice)}
+                                  {monthTab === "all" && `${monthText(leaf.month)}　`}単価 {formatCurrency(leaf.unitPrice)}
                                 </td>
                                 <td className="px-3 py-1.5" />
                                 <td className="px-3 py-1.5 text-right text-slate-600">
@@ -490,6 +583,12 @@ export function DashboardClient({
                                 <td className="px-3 py-1.5" />
                                 <td className="px-3 py-1.5 text-right text-slate-600">
                                   {formatCurrency(leaf.acquiredAmount)}
+                                </td>
+                                <td className="px-3 py-1.5 text-right text-slate-600">
+                                  <ConfirmedInput key={leaf.confirmedQty} leaf={leaf} isAdmin={isAdmin} />
+                                </td>
+                                <td className="px-3 py-1.5 text-right font-medium text-slate-800">
+                                  {formatCurrency(Math.round(leaf.confirmedAmount))}
                                 </td>
                               </tr>
                             </Fragment>
@@ -506,6 +605,8 @@ export function DashboardClient({
                     <Progress acquired={group.acquiredQty} target={group.target} />
                   </td>
                   <td className="px-3 py-2 text-right">{formatCurrency(group.acquiredAmount)}</td>
+                  <td className="px-3 py-2 text-right">{qtyText(group.confirmedQty)}</td>
+                  <td className="px-3 py-2 text-right">{formatCurrency(Math.round(group.confirmedAmount))}</td>
                 </tr>
               </Fragment>
             ))}
@@ -527,13 +628,15 @@ export function DashboardClient({
                   <Progress acquired={totals.acquiredQty} target={totals.target} />
                 </td>
                 <td className="px-3 py-2 text-right">{formatCurrency(totals.acquiredAmount)}</td>
+                <td className="px-3 py-2 text-right">{qtyText(totals.confirmedQty)}</td>
+                <td className="px-3 py-2 text-right">{formatCurrency(Math.round(totals.confirmedAmount))}</td>
               </tr>
             </tfoot>
           )}
         </table>
       </div>
       <p className="-mt-3 text-xs text-slate-400">
-        {topKind}ごとにまとめています。設定件数は「案件設定」で決めた件数、獲得件数は案件獲得の登録の合計です。進捗率＝獲得件数÷設定件数です。
+        {topKind}ごとにまとめています。設定件数は「案件設定」で決めた件数、獲得件数は案件獲得の登録の合計です。進捗率＝獲得件数÷設定件数です。有効件数は、行の▶で開く単価ごとの欄に入力します（管理者のみ）。確定金額＝有効件数×単価です。
         行の▶を押すと単価ごとの件数が見えます。獲得件数にカーソルを当てると、登録日ごとの件数が表示されます。
       </p>
 

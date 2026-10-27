@@ -159,6 +159,16 @@ export type ProjectAssignment = {
   sort_order: number;
 };
 
+// ダッシュボードで手入力する、単価ごとの有効件数
+export type ConfirmedQuantity = {
+  id: string;
+  month: string;
+  staff_id: string;
+  project_name: string;
+  unit_price: number;
+  quantity: number;
+};
+
 // 結果の手入力値（pl_actual_entries）。形は計画と同じ
 export type PlActualEntry = PlPlanEntry;
 
