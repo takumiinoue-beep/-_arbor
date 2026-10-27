@@ -6,7 +6,6 @@ const navItems = [
   { href: "/dashboard", label: "ダッシュボード" },
   { href: "/project-settings", label: "案件設定" },
   { href: "/projects", label: "案件一覧" },
-  { href: "/fixed-costs", label: "固定費管理" },
 ];
 
 const adminNavItems = [

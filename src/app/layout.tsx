@@ -14,7 +14,7 @@ const geistMono = Geist_Mono({
 
 export const metadata: Metadata = {
   title: "案件・売上管理システム",
-  description: "案件の予算・実績・固定費を一元管理する社内システム",
+  description: "案件の予算・実績を一元管理する社内システム",
 };
 
 export default function RootLayout({

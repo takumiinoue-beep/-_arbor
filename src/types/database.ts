@@ -47,16 +47,6 @@ export type ActualLog = {
   changed_at: string;
 };
 
-export type FixedCost = {
-  id: string;
-  item_name: string;
-  amount: number;
-  period_type: PeriodType;
-  target_month: string;
-  notes: string | null;
-  created_at: string;
-};
-
 export type PriceRate = {
   id: string;
   project_id: string;
