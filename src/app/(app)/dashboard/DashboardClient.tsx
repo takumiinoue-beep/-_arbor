@@ -7,8 +7,9 @@ import { Progress } from "@/components/common/Progress";
 import { defaultUnitPrice, latestByName } from "@/lib/projects";
 import { acquisitionMonth, type ConfirmedRow } from "@/lib/sales";
 import { AcquisitionButton, type AcquisitionProject } from "./AcquisitionButton";
+import Modal from "@/components/common/Modal";
 import { DeleteAcquisitionButton } from "./DeleteAcquisitionButton";
-import { setConfirmedQuantity } from "./actions";
+import { setConfirmedQuantity, updateAcquisition } from "./actions";
 
 export type AcquisitionRow = Pick<
   Acquisition,
@@ -20,7 +21,15 @@ export type AcquisitionRow = Pick<
 
 type DashboardAssignment = Pick<ProjectAssignment, "month" | "staff_id" | "project_id" | "target_quantity">;
 
-type SalesEntry = { id: string; acquiredDate: string; quantity: number; unitPrice: number };
+type SalesEntry = {
+  id: string;
+  acquiredDate: string;
+  targetMonth: string | null; // 計上月（"YYYY-MM"）。獲得日と同じ月のときは null
+  quantity: number;
+  unitPrice: number;
+  opName: string;
+  projectName: string;
+};
 
 // 月 × 単価ごとの内訳（有効件数は、この単位で手入力する）
 type Leaf = {
@@ -138,7 +147,15 @@ function buildCells(args: {
     }
     leaf.acquiredQty += a.quantity;
     leaf.acquiredAmount += Number(a.amount);
-    leaf.entries.push({ id: a.id, acquiredDate: a.acquired_date, quantity: a.quantity, unitPrice: a.unit_price });
+    leaf.entries.push({
+      id: a.id,
+      acquiredDate: a.acquired_date,
+      targetMonth: a.target_month ? a.target_month.slice(0, 7) : null,
+      quantity: a.quantity,
+      unitPrice: a.unit_price,
+      opName: cell.opName,
+      projectName: name,
+    });
   }
 
   for (const cell of cells.values()) {
@@ -155,6 +172,7 @@ function buildCells(args: {
 }
 
 type DailyGroup = {
+  staffId: string;
   label: string;
   days: { day: number; date: string; count: number; amount: number }[];
   // 計上月以外の月に登録した分（来月のアポを今月のうちに登録した分など）
@@ -165,17 +183,26 @@ type DailyGroup = {
 
 // 指定した月の1日〜末日について、OP（または案件）ごとに獲得件数・獲得金額を積み上げる
 // （データが無い日も0件として含め、月全体が見えるようにする）
-function buildDaily(acquisitions: AcquisitionRow[], monthKey: string, view: View): DailyGroup[] {
+function buildDaily(
+  acquisitions: AcquisitionRow[],
+  monthKey: string,
+  view: View,
+  rankOf: (staffId: string) => number
+): DailyGroup[] {
   const year = Number(monthKey.slice(0, 4));
   const month = Number(monthKey.slice(5, 7));
   const daysInMonth = new Date(Date.UTC(year, month, 0)).getUTCDate();
 
-  type Acc = { days: Map<number, { count: number; amount: number }>; other: { count: number; amount: number } };
+  type Acc = {
+    staffId: string;
+    days: Map<number, { count: number; amount: number }>;
+    other: { count: number; amount: number };
+  };
   const byLabel = new Map<string, Acc>();
   for (const a of acquisitions) {
     if (acquisitionMonth(a) !== monthKey) continue;
     const label = view === "op" ? (a.staff?.name ?? "不明") : (a.project?.name ?? "(削除済み案件)");
-    const acc = byLabel.get(label) ?? { days: new Map(), other: { count: 0, amount: 0 } };
+    const acc = byLabel.get(label) ?? { staffId: a.staff_id, days: new Map(), other: { count: 0, amount: 0 } };
     if (a.acquired_date.slice(0, 7) === monthKey) {
       const day = Number(a.acquired_date.slice(8, 10));
       const entry = acc.days.get(day) ?? { count: 0, amount: 0 };
@@ -198,6 +225,7 @@ function buildDaily(acquisitions: AcquisitionRow[], monthKey: string, view: View
       return { day, date, count: entry.count, amount: entry.amount };
     });
     result.push({
+      staffId: acc.staffId,
       label,
       days,
       other: acc.other,
@@ -206,11 +234,14 @@ function buildDaily(acquisitions: AcquisitionRow[], monthKey: string, view: View
     });
   }
 
-  return result.sort((a, b) => a.label.localeCompare(b.label, "ja"));
+  // OPごとの表示では、メンバー番号の小さい順
+  return result.sort(
+    (a, b) => (view === "op" ? rankOf(a.staffId) - rankOf(b.staffId) : 0) || a.label.localeCompare(b.label, "ja")
+  );
 }
 
 // OP×案件の行を、OP→案件（または案件→OP）にまとめる
-function groupCells(cells: Cell[], view: View): Group[] {
+function groupCells(cells: Cell[], view: View, rankOf: (staffId: string) => number): Group[] {
   const topOf = (c: Cell) => (view === "op" ? c.opName : c.projectName);
   const midOf = (c: Cell) => (view === "op" ? c.projectName : c.opName);
 
@@ -220,19 +251,37 @@ function groupCells(cells: Cell[], view: View): Group[] {
   return Array.from(tops, ([label, list]) => ({
     key: `${view}|${label}`,
     label,
-    cells: list.sort((a, b) => cmp(midOf(a), midOf(b))),
+    // 案件ごとの表示では、中のOPはメンバー番号の小さい順
+    cells: list.sort((a, b) =>
+      view === "project" ? rankOf(a.staffId) - rankOf(b.staffId) || cmp(midOf(a), midOf(b)) : cmp(midOf(a), midOf(b))
+    ),
     target: sum(list, (c) => c.target),
     targetAmount: sum(list, (c) => c.targetAmount),
     acquiredQty: sum(list, (c) => c.acquiredQty),
     acquiredAmount: sum(list, (c) => c.acquiredAmount),
     confirmedQty: sum(list, (c) => c.confirmedQty),
     confirmedAmount: sum(list, (c) => c.confirmedAmount),
-  })).sort((a, b) => cmp(a.label, b.label));
+  })).sort((a, b) =>
+    // OPごとの表示では、OPはメンバー番号の小さい順
+    view === "op"
+      ? rankOf(a.cells[0].staffId) - rankOf(b.cells[0].staffId) || cmp(a.label, b.label)
+      : cmp(a.label, b.label)
+  );
 }
 
-// 獲得件数の数字。カーソルを当てると、登録日ごとの件数を表示する（管理者は、そこから登録の削除もできる）
+// 獲得件数の数字。カーソルを当てると、登録日ごとの件数を表示する（管理者は、そこから登録の修正・削除もできる）
 // 表の横スクロール領域に隠れないよう、ポップアップは画面基準（fixed）で表示する
-function QtyWithDetail({ qty, entries, isAdmin }: { qty: number; entries: SalesEntry[]; isAdmin: boolean }) {
+function QtyWithDetail({
+  qty,
+  entries,
+  isAdmin,
+  onEdit,
+}: {
+  qty: number;
+  entries: SalesEntry[];
+  isAdmin: boolean;
+  onEdit: (entry: SalesEntry) => void;
+}) {
   const [anchor, setAnchor] = useState<{ right: number; top: number; bottom: number } | null>(null);
   if (entries.length === 0) return <>{qtyText(qty)}</>;
   const sorted = [...entries].sort((a, b) => b.acquiredDate.localeCompare(a.acquiredDate));
@@ -266,7 +315,14 @@ function QtyWithDetail({ qty, entries, isAdmin }: { qty: number; entries: SalesE
                 <span>{e.acquiredDate}</span>
                 <span className="flex items-center gap-2">
                   <span>{e.quantity}件</span>
-                  {isAdmin && <DeleteAcquisitionButton id={e.id} />}
+                  {isAdmin && (
+                    <>
+                      <button type="button" onClick={() => onEdit(e)} className="text-xs text-sky-700 hover:underline">
+                        修正
+                      </button>
+                      <DeleteAcquisitionButton id={e.id} />
+                    </>
+                  )}
                 </span>
               </span>
             ))}
@@ -326,6 +382,85 @@ function ConfirmedInput({ leaf, isAdmin }: { leaf: Leaf; isAdmin: boolean }) {
   );
 }
 
+// 案件獲得の登録の修正（獲得日・計上月・件数）。OP・案件・単価を変えたいときは、削除して登録し直す
+function EditAcquisitionModal({ entry, onClose }: { entry: SalesEntry | null; onClose: () => void }) {
+  return (
+    <Modal isOpen={entry !== null} onClose={onClose} title="案件獲得の登録を修正">
+      {entry && <EditAcquisitionForm key={entry.id} entry={entry} onClose={onClose} />}
+    </Modal>
+  );
+}
+
+function EditAcquisitionForm({ entry, onClose }: { entry: SalesEntry; onClose: () => void }) {
+  const [date, setDate] = useState(entry.acquiredDate);
+  const [month, setMonth] = useState(entry.targetMonth ?? entry.acquiredDate.slice(0, 7));
+  const [quantity, setQuantity] = useState(String(entry.quantity));
+  const [error, setError] = useState<string | null>(null);
+  const [pending, startTransition] = useTransition();
+
+  function save() {
+    startTransition(async () => {
+      const result = await updateAcquisition({
+        id: entry.id,
+        acquiredDate: date,
+        targetMonth: month,
+        quantity: Number(quantity),
+      });
+      if (result?.error) setError(result.error);
+      else onClose();
+    });
+  }
+
+  const inputCls = "rounded-md border border-slate-300 px-3 py-2 text-sm focus:border-slate-500 focus:outline-none";
+  return (
+    <div className="flex flex-col gap-4 text-sm">
+      <p className="text-slate-600">
+        {entry.opName}／{entry.projectName}／単価 {formatCurrency(entry.unitPrice)}
+      </p>
+      <label className="flex flex-col gap-1">
+        <span className="font-medium text-slate-700">獲得日</span>
+        <input type="date" value={date} onChange={(e) => setDate(e.target.value)} className={inputCls} />
+      </label>
+      <label className="flex flex-col gap-1">
+        <span className="font-medium text-slate-700">計上月</span>
+        <input type="month" value={month} onChange={(e) => setMonth(e.target.value)} className={inputCls} />
+      </label>
+      <label className="flex flex-col gap-1">
+        <span className="font-medium text-slate-700">件数</span>
+        <input
+          type="number"
+          min={1}
+          step={1}
+          value={quantity}
+          onChange={(e) => setQuantity(e.target.value)}
+          className={inputCls}
+        />
+      </label>
+      <p className="text-xs text-slate-400">
+        計上月を変えると、その月の行に移ります（移る前の月に入力した有効件数は、その月に残ります）。
+      </p>
+      {error && <p className="rounded-md bg-red-50 px-3 py-2 text-red-600">{error}</p>}
+      <div className="flex gap-3">
+        <button
+          type="button"
+          onClick={save}
+          disabled={pending}
+          className="rounded-md bg-slate-900 px-4 py-2 font-medium text-white hover:bg-slate-700 disabled:opacity-50"
+        >
+          {pending ? "保存中..." : "保存する"}
+        </button>
+        <button
+          type="button"
+          onClick={onClose}
+          className="rounded-md border border-slate-200 px-4 py-2 text-slate-600 hover:bg-slate-100"
+        >
+          キャンセル
+        </button>
+      </div>
+    </div>
+  );
+}
+
 export function DashboardClient({
   projects,
   assignments,
@@ -350,6 +485,7 @@ export function DashboardClient({
   const [view, setView] = useState<View>("op");
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
   const [dailyExpanded, setDailyExpanded] = useState<Set<string>>(new Set());
+  const [editing, setEditing] = useState<SalesEntry | null>(null);
 
   function toggle(setter: typeof setExpanded, key: string) {
     setter((prev) => {
@@ -403,7 +539,12 @@ export function DashboardClient({
       }),
     [filteredAcquisitions, filteredAssignments, nameById, staffName, confirmed, defaultPriceByName]
   );
-  const groups = useMemo(() => groupCells(cells, view), [cells, view]);
+  // メンバー番号の小さい順（staffList はその順で渡される）
+  const rankOf = useMemo(() => {
+    const rank = new Map(staffList.map((s, i) => [s.id, i]));
+    return (staffId: string) => rank.get(staffId) ?? Number.MAX_SAFE_INTEGER;
+  }, [staffList]);
+  const groups = useMemo(() => groupCells(cells, view, rankOf), [cells, view, rankOf]);
 
   // 獲得の登録画面に出す、案件設定の件数と現在件数（月|OP|案件名 ごと）
   const progress = useMemo(() => {
@@ -427,8 +568,8 @@ export function DashboardClient({
   // タブが「全て」のときはデイリー表は当月を対象にする
   const dailyTargetMonth = monthTab === "all" ? currentMonthKey : monthTab;
   const daily = useMemo(
-    () => buildDaily(acquisitions, dailyTargetMonth, view),
-    [acquisitions, dailyTargetMonth, view]
+    () => buildDaily(acquisitions, dailyTargetMonth, view, rankOf),
+    [acquisitions, dailyTargetMonth, view, rankOf]
   );
 
   const totals = useMemo(
@@ -452,6 +593,7 @@ export function DashboardClient({
 
   return (
     <div className="flex flex-col gap-6">
+      <EditAcquisitionModal entry={editing} onClose={() => setEditing(null)} />
       <div className="flex flex-wrap gap-1 border-b border-slate-200">
         <button
           type="button"
@@ -555,6 +697,7 @@ export function DashboardClient({
                             qty={cell.acquiredQty}
                             entries={cell.leaves.flatMap((l) => l.entries)}
                             isAdmin={isAdmin}
+                            onEdit={setEditing}
                           />
                         </td>
                         <td className="px-3 py-2 text-right text-slate-700">
@@ -577,7 +720,7 @@ export function DashboardClient({
                                 </td>
                                 <td className="px-3 py-1.5" colSpan={2} />
                                 <td className="px-3 py-1.5 text-right text-slate-600">
-                                  <QtyWithDetail qty={leaf.acquiredQty} entries={leaf.entries} isAdmin={isAdmin} />
+                                  <QtyWithDetail qty={leaf.acquiredQty} entries={leaf.entries} isAdmin={isAdmin} onEdit={setEditing} />
                                 </td>
                                 <td className="px-3 py-1.5" />
                                 <td className="px-3 py-1.5 text-right text-slate-600">

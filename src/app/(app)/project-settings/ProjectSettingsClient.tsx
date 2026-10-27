@@ -246,6 +246,32 @@ export function ProjectSettingsClient({
 
   const removeRow = (key: number) => setRows((prev) => prev.filter((r) => r.key !== key));
 
+  // 前月の設定を、この月にコピーする。この月にすでにあるメンバー×案件はそのままにして、無い分だけ足す。
+  // 進行中でなくなった案件はコピーしない。保存するまで確定しない
+  const prevMonthKey = useMemo(() => {
+    const d = new Date(Date.UTC(Number(month.slice(0, 4)), Number(month.slice(5, 7)) - 2, 1));
+    return d.toISOString().slice(0, 7);
+  }, [month]);
+  function copyFromPrevMonth() {
+    const have = new Set(rows.map((r) => `${r.staffId}|${projectById.get(r.projectId)?.name ?? ""}`));
+    const added: Row[] = [];
+    for (const r of rowsByMonth.get(prevMonthKey) ?? []) {
+      const name = projectById.get(r.projectId)?.name;
+      const master = name ? masterByName.get(name) : undefined;
+      if (!name || !master || master.status !== "進行中") continue;
+      const key = `${r.staffId}|${name}`;
+      if (have.has(key)) continue;
+      have.add(key);
+      added.push(newRow(r.staffId, master.id, r.target, r.rate, r.memo));
+    }
+    if (added.length === 0) {
+      setMessage({ type: "error", text: `${monthText(prevMonthKey)}からコピーできる設定がありません` });
+      return;
+    }
+    setRows((prev) => [...prev, ...added]);
+    setMessage({ type: "ok", text: `${monthText(prevMonthKey)}から${added.length}行をコピーしました（保存すると確定します）` });
+  }
+
   const addStaffRef = useRef<HTMLSelectElement>(null);
   function addStaff(staffId: string) {
     if (!staffId) return;
@@ -314,6 +340,13 @@ export function ProjectSettingsClient({
               </span>
             )}
             {dirty && !message && <span className="text-xs text-amber-600">未保存の変更があります</span>}
+            <button
+              type="button"
+              onClick={copyFromPrevMonth}
+              className="rounded-md border border-slate-300 px-4 py-2 text-sm text-slate-700 hover:bg-slate-100"
+            >
+              {monthText(prevMonthKey)}の設定をコピー
+            </button>
             <button
               type="button"
               onClick={handleSave}

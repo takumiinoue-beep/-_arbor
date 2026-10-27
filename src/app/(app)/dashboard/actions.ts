@@ -150,6 +150,43 @@ export async function setConfirmedQuantity(input: {
   return null;
 }
 
+// 案件獲得の登録を修正する（管理者のみ）。獲得日・計上月・件数を直せる
+export async function updateAcquisition(input: {
+  id: string;
+  acquiredDate: string; // "YYYY-MM-DD"
+  targetMonth: string; // "YYYY-MM"（獲得日と同じ月なら空でよい）
+  quantity: number;
+}): Promise<{ error: string } | null> {
+  await requireAdmin();
+
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(input.acquiredDate)) return { error: "獲得日を入力してください。" };
+  if (input.targetMonth && !/^\d{4}-\d{2}$/.test(input.targetMonth)) return { error: "計上月の形式が不正です。" };
+  if (!Number.isInteger(input.quantity) || input.quantity < 1) return { error: "件数は1以上の整数で入力してください。" };
+
+  // 獲得日と同じ月なら指定なし(null)として扱う（登録時と同じ）
+  const targetMonth =
+    input.targetMonth && input.targetMonth !== input.acquiredDate.slice(0, 7) ? `${input.targetMonth}-01` : null;
+
+  const supabase = await createClient();
+  const { error } = await supabase.rpc("update_acquisition", {
+    p_id: input.id,
+    p_acquired_date: input.acquiredDate,
+    p_target_month: targetMonth,
+    p_quantity: input.quantity,
+  });
+  if (error) {
+    return {
+      error: error.message.includes("update_acquisition")
+        ? "修正できませんでした。マイグレーション 0029 を実行してください。"
+        : `修正できませんでした: ${error.message}`,
+    };
+  }
+
+  revalidatePath("/dashboard");
+  revalidatePath("/project-settings");
+  return null;
+}
+
 export async function deleteAcquisition(id: string) {
   await requireAdmin();
   const supabase = await createClient();

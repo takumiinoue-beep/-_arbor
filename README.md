@@ -65,6 +65,7 @@ Supabaseダッシュボードの「SQL Editor」で、`supabase/migrations/` 配
 | [`0026_project_effective_rate.sql`](supabase/migrations/0026_project_effective_rate.sql) | 案件一覧を「案件名・料金表・デフォルト単価・有効率・ステータス」だけに簡素化。`projects.effective_rate`（案件の標準の有効率）を追加。既存データは消さない |
 | [`0027_profile_member_no.sql`](supabase/migrations/0027_profile_member_no.sql) | メンバー番号：`profiles.member_no`（既存メンバーには登録順に番号を振る）。案件設定は番号の小さい順に並ぶ |
 | [`0028_confirmed_quantities.sql`](supabase/migrations/0028_confirmed_quantities.sql) | 有効件数：`confirmed_quantities`（月×OP×案件×単価ごとに、ダッシュボードで手入力する。確定金額＝有効件数×単価） |
+| [`0029_update_acquisition.sql`](supabase/migrations/0029_update_acquisition.sql) | 案件獲得の登録の修正：RPC `update_acquisition`（獲得日・計上月・件数。管理者のみ） |
 
 ### 3. 環境変数を設定
 

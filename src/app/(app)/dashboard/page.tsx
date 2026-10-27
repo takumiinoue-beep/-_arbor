@@ -22,7 +22,7 @@ export default async function DashboardPage() {
       .select(
         "id, name, start_date, status, unit_price, effective_rate, price_rates(id, position, employee_min, employee_max, unit_price)"
       ),
-    supabase.from("profiles").select("id, name").order("name"),
+    supabase.from("profiles").select("id, name").order("member_no", { nullsFirst: false }).order("name"),
     fetchAllRows<AcquisitionRow>((from, to) =>
       supabase
         .from("acquisitions")
