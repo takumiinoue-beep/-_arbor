@@ -19,6 +19,7 @@ export type Project = {
   end_date: string | null;
   unit_price: number;
   effective_rate: number;
+  client_id: number | null; // どこからの案件か（取引先）。任意
   quantity: number;
   budget: number;
   actual_quantity: number;

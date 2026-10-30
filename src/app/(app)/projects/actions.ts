@@ -66,12 +66,15 @@ function parseProjectForm(formData: FormData) {
   const effectiveRate = Number(formData.get("effective_rate") ?? 100);
   const status = String(formData.get("status") ?? "進行中") as ProjectStatus;
   const priceRatesRaw = String(formData.get("price_rates") ?? "[]");
+  const clientIdRaw = String(formData.get("client_id") ?? "").trim();
+  const clientId = clientIdRaw === "" ? null : Number(clientIdRaw);
 
   if (!name) return { ok: false, error: "案件名は必須です。" } as const;
   if (Number.isNaN(unitPrice) || unitPrice < 0)
     return { ok: false, error: "デフォルトの単価は0以上の数値で入力してください。" } as const;
   if (Number.isNaN(effectiveRate) || effectiveRate < 0 || effectiveRate > 100)
     return { ok: false, error: "有効率は0〜100で入力してください。" } as const;
+  if (clientId !== null && !Number.isInteger(clientId)) return { ok: false, error: "取引先が不正です。" } as const;
   if (!["進行中", "完了", "中止"].includes(status)) return { ok: false, error: "ステータスが不正です。" } as const;
 
   const priceRates = parsePriceRateRows(priceRatesRaw);
@@ -79,7 +82,7 @@ function parseProjectForm(formData: FormData) {
 
   return {
     ok: true,
-    value: { name, unit_price: unitPrice, effective_rate: effectiveRate, status },
+    value: { name, unit_price: unitPrice, effective_rate: effectiveRate, status, client_id: clientId },
     priceRates: priceRates.value,
   } as const;
 }
@@ -144,7 +147,13 @@ export async function createProject(_prevState: FormState, formData: FormData): 
     .insert({ ...parsed.value, quantity: 0, start_date: new Date().toISOString().slice(0, 10) })
     .select("id")
     .single();
-  if (error) return { error: `登録に失敗しました: ${error.message}` };
+  if (error) {
+    return {
+      error: error.message.includes("client_id")
+        ? "登録に失敗しました。マイグレーション 0031 を実行してください。"
+        : `登録に失敗しました: ${error.message}`,
+    };
+  }
 
   const rateError = await savePriceRates(supabase, data.id, parsed.priceRates);
   if (rateError) return { error: `料金表の登録に失敗しました: ${rateError}` };
@@ -176,7 +185,20 @@ export async function updateProject(id: string, _prevState: FormState, formData:
   }
 
   const { error } = await supabase.from("projects").update(parsed.value).eq("id", id);
-  if (error) return { error: `更新に失敗しました: ${error.message}` };
+  if (error) {
+    return {
+      error: error.message.includes("client_id")
+        ? "更新に失敗しました。マイグレーション 0031 を実行してください。"
+        : `更新に失敗しました: ${error.message}`,
+    };
+  }
+
+  // 取引先は案件名ごとに1つ。同じ名前の過去の案件（以前は月ごとに作っていたもの）にもそろえる
+  const { error: clientError } = await supabase
+    .from("projects")
+    .update({ client_id: parsed.value.client_id })
+    .eq("name", parsed.value.name);
+  if (clientError) return { error: `取引先の更新に失敗しました: ${clientError.message}` };
 
   const rateError = await savePriceRates(supabase, id, parsed.priceRates);
   if (rateError) return { error: `料金表の更新に失敗しました: ${rateError}` };

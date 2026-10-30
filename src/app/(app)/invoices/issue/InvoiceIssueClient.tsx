@@ -31,6 +31,7 @@ export type BillableItem = {
   description: string;
   label: string;
   unit_price: number;
+  client_id: number | null; // 案件の取引先
   confirmed_quantity: number; // 有効件数（ダッシュボードで入力した件数）
   start_date: string; // 計上月の1日
 };
@@ -70,10 +71,17 @@ export function InvoiceIssueClient({
   const [selectedProjectId, setSelectedProjectId] = useState("");
   const [selectedMonth, setSelectedMonth] = useState("");
 
+  // 取引先を選んでいるときは、その取引先の案件だけを明細の候補にする
+  const clientFilterId = form.client_id ? Number(form.client_id) : null;
+  const candidates = useMemo(
+    () => (clientFilterId === null ? billableItems : billableItems.filter((p) => p.client_id === clientFilterId)),
+    [billableItems, clientFilterId]
+  );
+
   const projectMonths = useMemo(() => {
-    const set = new Set(billableItems.map((p) => p.start_date.slice(0, 7)));
+    const set = new Set(candidates.map((p) => p.start_date.slice(0, 7)));
     return Array.from(set).sort().reverse();
-  }, [billableItems]);
+  }, [candidates]);
 
   function updateItem(idx: number, field: keyof InvoiceItemForm, val: string | number) {
     setItems((prev) => {
@@ -97,7 +105,7 @@ export function InvoiceIssueClient({
   }
 
   function addItemFromProject() {
-    const item = billableItems.find((p) => p.id === selectedProjectId);
+    const item = candidates.find((p) => p.id === selectedProjectId);
     if (!item) return;
     appendItems([billableItemToInvoiceItem(item)]);
     setSelectedProjectId("");
@@ -105,7 +113,7 @@ export function InvoiceIssueClient({
 
   function addItemsFromMonth() {
     if (!selectedMonth) return;
-    const monthItems = billableItems.filter((p) => p.start_date.slice(0, 7) === selectedMonth);
+    const monthItems = candidates.filter((p) => p.start_date.slice(0, 7) === selectedMonth);
     appendItems(monthItems.map(billableItemToInvoiceItem));
     setSelectedMonth("");
   }
@@ -419,6 +427,13 @@ export function InvoiceIssueClient({
 
             {billableItems.length > 0 && (
               <div className="mb-2 flex flex-col gap-2">
+                <p className="text-xs text-slate-400">
+                  {clientFilterId === null
+                    ? "取引先を選ぶと、案件一覧でその取引先に設定した案件だけが候補になります。"
+                    : candidates.length > 0
+                      ? `${form.client_name || "選んだ取引先"}の案件だけを表示しています。`
+                      : `${form.client_name || "選んだ取引先"}の案件で、有効件数を入力した月がありません。案件一覧で取引先を設定し、ダッシュボードで有効件数を入力してください。`}
+                </p>
                 {projectMonths.length > 0 && (
                   <div className="flex flex-wrap items-center gap-2">
                     <select
@@ -428,7 +443,7 @@ export function InvoiceIssueClient({
                     >
                       <option value="">-- 月をまとめて追加 --</option>
                       {projectMonths.map((m) => {
-                        const count = billableItems.filter((p) => p.start_date.slice(0, 7) === m).length;
+                        const count = candidates.filter((p) => p.start_date.slice(0, 7) === m).length;
                         return (
                           <option key={m} value={m}>
                             {Number(m.slice(5, 7))}月（{count}件）
@@ -453,7 +468,7 @@ export function InvoiceIssueClient({
                     onChange={(e) => setSelectedProjectId(e.target.value)}
                   >
                     <option value="">-- 案件から明細を追加 --</option>
-                    {billableItems.map((p) => (
+                    {candidates.map((p) => (
                       <option key={p.id} value={p.id}>
                         {p.label}
                       </option>

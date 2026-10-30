@@ -18,7 +18,15 @@ function rateRangeLabel(rate: PriceRate) {
 // 進行中を上、完了を下に表示する（中止はその間）
 const STATUS_ORDER: Record<ProjectStatus, number> = { 進行中: 0, 中止: 1, 完了: 2 };
 
-export function ProjectsClient({ projects, isAdmin }: { projects: ProjectRow[]; isAdmin: boolean }) {
+export function ProjectsClient({
+  projects,
+  clientNames,
+  isAdmin,
+}: {
+  projects: ProjectRow[];
+  clientNames: Record<number, string>; // 取引先id -> 取引先名
+  isAdmin: boolean;
+}) {
   const [keyword, setKeyword] = useState("");
   const [status, setStatus] = useState<ProjectStatus | "">("");
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
@@ -90,6 +98,7 @@ export function ProjectsClient({ projects, isAdmin }: { projects: ProjectRow[]; 
           <thead className="bg-slate-50">
             <tr>
               <th className="px-3 py-2 text-left font-medium text-slate-500">案件名</th>
+              <th className="px-3 py-2 text-left font-medium text-slate-500">取引先</th>
               <th className="px-3 py-2 text-right font-medium text-slate-500">デフォルト単価</th>
               <th className="px-3 py-2 text-right font-medium text-slate-500">有効率</th>
               <th className="px-3 py-2 text-left font-medium text-slate-500">ステータス</th>
@@ -119,6 +128,9 @@ export function ProjectsClient({ projects, isAdmin }: { projects: ProjectRow[]; 
                       ) : (
                         <span className="pl-4">{p.name}</span>
                       )}
+                    </td>
+                    <td className="px-3 py-2 text-slate-700">
+                      {p.client_id !== null ? (clientNames[p.client_id] ?? "-") : "-"}
                     </td>
                     <td className="px-3 py-2 text-right text-slate-700">{formatCurrency(Number(p.unit_price))}</td>
                     <td className="px-3 py-2 text-right text-slate-700">{Number(p.effective_rate)}%</td>
@@ -152,6 +164,7 @@ export function ProjectsClient({ projects, isAdmin }: { projects: ProjectRow[]; 
                         <td className="px-3 py-1.5 pl-9 text-slate-500">
                           └ {r.position}（{rateRangeLabel(r)}）
                         </td>
+                        <td />
                         <td className="px-3 py-1.5 text-right text-slate-600">{formatCurrency(Number(r.unit_price))}</td>
                         <td colSpan={isAdmin ? 3 : 2} />
                       </tr>
@@ -161,7 +174,7 @@ export function ProjectsClient({ projects, isAdmin }: { projects: ProjectRow[]; 
             })}
             {rows.length === 0 && (
               <tr>
-                <td colSpan={isAdmin ? 5 : 4} className="px-3 py-6 text-center text-slate-400">
+                <td colSpan={isAdmin ? 6 : 5} className="px-3 py-6 text-center text-slate-400">
                   該当する案件がありません
                 </td>
               </tr>

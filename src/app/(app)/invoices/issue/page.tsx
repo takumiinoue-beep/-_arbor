@@ -1,6 +1,7 @@
 import { requireAdmin } from "@/lib/auth";
 import { createClient } from "@/lib/supabase/server";
 import { fetchAllRows } from "@/lib/supabase/fetchAll";
+import { latestByName } from "@/lib/projects";
 import { confirmedLines } from "@/lib/sales";
 import { fetchConfirmedRows } from "@/lib/confirmed";
 import type { Client, CompanyBankAccount, InvoiceIssued } from "@/types/database";
@@ -20,7 +21,7 @@ export default async function InvoiceIssuePage() {
         .select("*, clients(name)")
         .eq("is_deleted", false)
         .order("date", { ascending: false }),
-      supabase.from("projects").select("id, name"),
+      supabase.from("projects").select("id, name, start_date, client_id"),
       fetchConfirmedRows(),
       fetchAllRows<{
         acquired_date: string;
@@ -41,6 +42,13 @@ export default async function InvoiceIssuePage() {
 
   // 請求書の明細候補：計上月 × 案件 × 単価ごとの有効件数（ダッシュボードで入力した件数を、OPをまとめて合計）
   const nameById = new Map((projects ?? []).map((p) => [p.id as string, p.name as string]));
+  // 案件の取引先（案件名ごとに、一番新しい案件の取引先）
+  const clientIdByName = new Map(
+    Array.from(
+      latestByName((projects ?? []) as { name: string; start_date: string; client_id: number | null }[]),
+      ([name, p]) => [name, p.client_id] as const
+    )
+  );
   const grouped = new Map<string, { month: string; name: string; unitPrice: number; qty: number }>();
   for (const l of confirmedLines({ acquisitions, nameById, confirmed })) {
     const key = `${l.month}|${l.projectName}|${l.unitPrice}`;
@@ -56,6 +64,7 @@ export default async function InvoiceIssuePage() {
       description: g.name,
       label: `${Number(g.month.slice(5, 7))}月 ${g.name}（有効 ${g.qty}件 × ¥${g.unitPrice.toLocaleString("ja-JP")}）`,
       unit_price: g.unitPrice,
+      client_id: clientIdByName.get(g.name) ?? null,
       confirmed_quantity: g.qty,
       start_date: `${g.month}-01`,
     }));

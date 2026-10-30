@@ -2,7 +2,7 @@
 
 import { useActionState, useState } from "react";
 import Link from "next/link";
-import type { PriceRate, Project } from "@/types/database";
+import type { Client, PriceRate, Project } from "@/types/database";
 
 type Action = (
   prevState: { error: string } | null,
@@ -25,11 +25,13 @@ const cellInputClass = "w-full rounded-md border border-slate-300 px-2 py-1.5 te
 
 export function ProjectForm({
   action,
+  clients,
   priceRates,
   project,
   submitLabel,
 }: {
   action: Action;
+  clients: Pick<Client, "id" | "name">[];
   priceRates: PriceRate[];
   project?: Project;
   submitLabel: string;
@@ -58,6 +60,23 @@ export function ProjectForm({
           案件名 <span className="text-red-500">*</span>
         </label>
         <input id="name" name="name" required defaultValue={project?.name ?? ""} className={inputClass} />
+      </div>
+
+      <div className="flex flex-col gap-1">
+        <label htmlFor="client_id" className="text-sm font-medium text-slate-700">
+          取引先
+        </label>
+        <select id="client_id" name="client_id" defaultValue={project?.client_id ?? ""} className={inputClass}>
+          <option value="">（指定しない）</option>
+          {clients.map((c) => (
+            <option key={c.id} value={c.id}>
+              {c.name}
+            </option>
+          ))}
+        </select>
+        <p className="text-xs text-slate-400">
+          どこからの案件かを、取引先ページに登録した取引先から選びます（任意）。請求書発行で、その取引先の案件だけを一括追加できます。
+        </p>
       </div>
 
       <div className="grid grid-cols-2 gap-4">
