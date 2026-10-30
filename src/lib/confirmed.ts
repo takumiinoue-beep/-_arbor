@@ -9,8 +9,8 @@ export async function fetchConfirmedRows(): Promise<ConfirmedRow[]> {
   const supabase = await createClient();
   return fetchAllRows<ConfirmedRow>((from, to) =>
     supabase
-      .from("confirmed_quantities")
-      .select("month, staff_id, project_name, unit_price, quantity")
+      .from("confirmed_totals")
+      .select("month, project_name, unit_price, quantity")
       .order("id")
       .range(from, to)
       .overrideTypes<ConfirmedRow[], { merge: false }>()

@@ -113,10 +113,9 @@ export async function createAcquisition(
   return null;
 }
 
-// 単価ごとの有効件数を保存する（管理者のみ）。month は "YYYY-MM"
-export async function setConfirmedQuantity(input: {
+// 案件×単価ごとの有効件数（全OPの合計）を保存する（管理者のみ）。month は "YYYY-MM"
+export async function setConfirmedTotal(input: {
   month: string;
-  staffId: string;
   projectName: string;
   unitPrice: number;
   quantity: number;
@@ -127,26 +126,27 @@ export async function setConfirmedQuantity(input: {
   if (!Number.isFinite(input.quantity) || input.quantity < 0) return { error: "有効件数は0以上で入力してください。" };
 
   const supabase = await createClient();
-  const { error } = await supabase.from("confirmed_quantities").upsert(
+  const { error } = await supabase.from("confirmed_totals").upsert(
     {
       month: `${input.month}-01`,
-      staff_id: input.staffId,
       project_name: input.projectName,
       unit_price: input.unitPrice,
       quantity: Math.round(input.quantity * 100) / 100,
       updated_at: new Date().toISOString(),
     },
-    { onConflict: "month,staff_id,project_name,unit_price" }
+    { onConflict: "month,project_name,unit_price" }
   );
   if (error) {
     return {
-      error: error.message.includes("confirmed_quantities")
-        ? "保存できませんでした。マイグレーション 0028 を実行してください。"
+      error: error.message.includes("confirmed_totals")
+        ? "保存できませんでした。マイグレーション 0030 を実行してください。"
         : `保存できませんでした: ${error.message}`,
     };
   }
 
   revalidatePath("/dashboard");
+  revalidatePath("/accounting", "layout");
+  revalidatePath("/invoices/issue");
   return null;
 }
 

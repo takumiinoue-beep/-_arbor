@@ -5,11 +5,11 @@ import type { Acquisition, Profile, ProjectAssignment } from "@/types/database";
 import { formatCurrency } from "@/lib/format";
 import { Progress } from "@/components/common/Progress";
 import { defaultUnitPrice, latestByName } from "@/lib/projects";
-import { acquisitionMonth, type ConfirmedRow } from "@/lib/sales";
+import { acquisitionMonth, confirmedLines, type ConfirmedLine, type ConfirmedRow } from "@/lib/sales";
 import { AcquisitionButton, type AcquisitionProject } from "./AcquisitionButton";
 import Modal from "@/components/common/Modal";
 import { DeleteAcquisitionButton } from "./DeleteAcquisitionButton";
-import { setConfirmedQuantity, updateAcquisition } from "./actions";
+import { setConfirmedTotal, updateAcquisition } from "./actions";
 
 export type AcquisitionRow = Pick<
   Acquisition,
@@ -40,7 +40,7 @@ type Leaf = {
   unitPrice: number;
   acquiredQty: number;
   acquiredAmount: number;
-  confirmedQty: number; // 有効件数（手入力）
+  confirmedQty: number; // 有効件数（上の表で入力した合計を、獲得件数の比率でOPに按分した値）
   confirmedAmount: number; // 確定金額＝有効件数×単価
   entries: SalesEntry[];
 };
@@ -85,12 +85,12 @@ function buildCells(args: {
   assignments: DashboardAssignment[]; // 表示する期間の案件設定
   nameById: Map<string, string>;
   staffName: Map<string, string>;
-  confirmed: ConfirmedRow[];
+  lines: ConfirmedLine[]; // OPごとに按分した有効件数
   defaultPriceByName: Map<string, number>; // 案件名 → デフォルト単価
 }): Cell[] {
-  const { acquisitions, assignments, nameById, staffName, confirmed, defaultPriceByName } = args;
+  const { acquisitions, assignments, nameById, staffName, lines, defaultPriceByName } = args;
   const confirmedBy = new Map(
-    confirmed.map((c) => [`${c.month.slice(0, 7)}|${c.staff_id}|${c.project_name}|${c.unit_price}`, Number(c.quantity)])
+    lines.map((l) => [`${l.month}|${l.staffId}|${l.projectName}|${l.unitPrice}`, l.quantity])
   );
   const cells = new Map<string, Cell>();
 
@@ -333,30 +333,38 @@ function QtyWithDetail({
   );
 }
 
-// 単価ごとの有効件数の入力。管理者のみ編集でき、Enter か枠の外をクリックで保存する
-function ConfirmedInput({ leaf, isAdmin }: { leaf: Leaf; isAdmin: boolean }) {
-  const [value, setValue] = useState(String(leaf.confirmedQty));
+// 案件×単価ごとの有効件数（全OPの合計）の入力。管理者のみ編集でき、Enter か枠の外をクリックで保存する
+type TotalRow = {
+  key: string;
+  month: string; // "YYYY-MM"
+  projectName: string;
+  unitPrice: number;
+  acquiredQty: number;
+  confirmedQty: number;
+};
+
+function ConfirmedTotalInput({ row, isAdmin }: { row: TotalRow; isAdmin: boolean }) {
+  const [value, setValue] = useState(String(row.confirmedQty));
   const [pending, startTransition] = useTransition();
-  if (!isAdmin) return <>{qtyText(leaf.confirmedQty)}</>;
+  if (!isAdmin) return <>{qtyText(row.confirmedQty)}</>;
 
   function save() {
     const n = Number(value);
     if (value.trim() === "" || !Number.isFinite(n) || n < 0) {
-      setValue(String(leaf.confirmedQty));
+      setValue(String(row.confirmedQty));
       return;
     }
-    if (n === leaf.confirmedQty) return;
+    if (n === row.confirmedQty) return;
     startTransition(async () => {
-      const result = await setConfirmedQuantity({
-        month: leaf.month,
-        staffId: leaf.staffId,
-        projectName: leaf.projectName,
-        unitPrice: leaf.unitPrice,
+      const result = await setConfirmedTotal({
+        month: row.month,
+        projectName: row.projectName,
+        unitPrice: row.unitPrice,
         quantity: n,
       });
       if (result?.error) {
         alert(result.error);
-        setValue(String(leaf.confirmedQty));
+        setValue(String(row.confirmedQty));
       }
     });
   }
@@ -375,7 +383,7 @@ function ConfirmedInput({ leaf, isAdmin }: { leaf: Leaf; isAdmin: boolean }) {
           if (e.key === "Enter") e.currentTarget.blur();
         }}
         aria-label="有効件数"
-        className="w-16 rounded border border-slate-300 bg-white px-1.5 py-0.5 text-right text-xs disabled:opacity-50"
+        className="w-20 rounded border border-slate-300 bg-white px-2 py-1 text-right text-sm disabled:opacity-50"
       />
       件
     </span>
@@ -527,6 +535,39 @@ export function DashboardClient({
     [projects]
   );
 
+  // OPごとの有効件数＝入力した合計を、獲得件数の比率で按分した値
+  const lines = useMemo(
+    () => confirmedLines({ acquisitions, nameById, confirmed }),
+    [acquisitions, nameById, confirmed]
+  );
+
+  // 案件 × 単価 ごとの獲得件数（全OPの合計）と、入力した有効件数
+  const totalRows = useMemo(() => {
+    const confirmedBy = new Map(
+      confirmed.map((c) => [`${c.month.slice(0, 7)}|${c.project_name}|${c.unit_price}`, Number(c.quantity)])
+    );
+    const map = new Map<string, TotalRow>();
+    for (const a of filteredAcquisitions) {
+      const projectName = a.project?.name;
+      if (!projectName) continue;
+      const month = acquisitionMonth(a);
+      const key = `${month}|${projectName}|${a.unit_price}`;
+      const cur = map.get(key) ?? {
+        key,
+        month,
+        projectName,
+        unitPrice: Number(a.unit_price),
+        acquiredQty: 0,
+        confirmedQty: confirmedBy.get(key) ?? 0,
+      };
+      cur.acquiredQty += a.quantity;
+      map.set(key, cur);
+    }
+    return Array.from(map.values()).sort(
+      (a, b) => a.month.localeCompare(b.month) || cmp(a.projectName, b.projectName) || b.unitPrice - a.unitPrice
+    );
+  }, [filteredAcquisitions, confirmed]);
+
   const cells = useMemo(
     () =>
       buildCells({
@@ -534,10 +575,10 @@ export function DashboardClient({
         assignments: filteredAssignments,
         nameById,
         staffName,
-        confirmed,
+        lines,
         defaultPriceByName,
       }),
-    [filteredAcquisitions, filteredAssignments, nameById, staffName, confirmed, defaultPriceByName]
+    [filteredAcquisitions, filteredAssignments, nameById, staffName, lines, defaultPriceByName]
   );
   // メンバー番号の小さい順（staffList はその順で渡される）
   const rankOf = useMemo(() => {
@@ -645,6 +686,60 @@ export function DashboardClient({
         <AcquisitionButton projects={projects} staffList={staffList} currentUserId={currentUserId} progress={progress} />
       </div>
 
+      {totalRows.length > 0 && (
+        <div className="rounded-lg border border-slate-200 bg-white">
+          <div className="border-b border-slate-200 px-4 py-2.5">
+            <h2 className="text-sm font-semibold text-slate-700">有効件数の入力（案件×単価ごと）</h2>
+            <p className="text-xs text-slate-400">
+              獲得件数は全OPの合計です。有効件数を入力すると、確定金額（有効件数×単価）が出て、会計の売上と請求書発行に反映されます。
+              OPごとの有効件数は、獲得件数の比率で自動で分けます。
+            </p>
+          </div>
+          <div className="overflow-x-auto">
+            <table className="min-w-full divide-y divide-slate-200 text-sm">
+              <thead className="bg-slate-50">
+                <tr>
+                  {monthTab === "all" && <th className="px-3 py-2 text-left font-medium text-slate-500">月</th>}
+                  <th className="px-3 py-2 text-left font-medium text-slate-500">案件名</th>
+                  <th className="px-3 py-2 text-right font-medium text-slate-500">単価</th>
+                  <th className="px-3 py-2 text-right font-medium text-slate-500">獲得件数</th>
+                  <th className="px-3 py-2 text-right font-medium text-slate-500">有効件数</th>
+                  <th className="px-3 py-2 text-right font-medium text-slate-500">確定金額</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100">
+                {totalRows.map((row) => (
+                  <tr key={row.key} className="hover:bg-slate-50">
+                    {monthTab === "all" && <td className="px-3 py-1.5 text-slate-600">{monthText(row.month)}</td>}
+                    <td className="px-3 py-1.5 text-slate-700">{row.projectName}</td>
+                    <td className="px-3 py-1.5 text-right text-slate-700">{formatCurrency(row.unitPrice)}</td>
+                    <td className="px-3 py-1.5 text-right text-slate-700">{qtyText(row.acquiredQty)}</td>
+                    <td className="px-3 py-1.5 text-right text-slate-700">
+                      <ConfirmedTotalInput key={row.confirmedQty} row={row} isAdmin={isAdmin} />
+                    </td>
+                    <td className="px-3 py-1.5 text-right font-medium text-slate-900">
+                      {formatCurrency(Math.round(row.confirmedQty * row.unitPrice))}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+              <tfoot className="border-t-2 border-slate-300 bg-slate-100 font-bold text-slate-900">
+                <tr>
+                  <td className="px-3 py-2" colSpan={monthTab === "all" ? 3 : 2}>
+                    合計
+                  </td>
+                  <td className="px-3 py-2 text-right">{qtyText(sum(totalRows, (r) => r.acquiredQty))}</td>
+                  <td className="px-3 py-2 text-right">{qtyText(sum(totalRows, (r) => r.confirmedQty))}</td>
+                  <td className="px-3 py-2 text-right">
+                    {formatCurrency(Math.round(sum(totalRows, (r) => r.confirmedQty * r.unitPrice)))}
+                  </td>
+                </tr>
+              </tfoot>
+            </table>
+          </div>
+        </div>
+      )}
+
       <div className="overflow-x-auto rounded-lg border border-slate-200 bg-white">
         <table className="min-w-full divide-y divide-slate-200 text-sm">
           <thead className="bg-slate-50">
@@ -727,7 +822,7 @@ export function DashboardClient({
                                   {formatCurrency(leaf.acquiredAmount)}
                                 </td>
                                 <td className="px-3 py-1.5 text-right text-slate-600">
-                                  <ConfirmedInput key={leaf.confirmedQty} leaf={leaf} isAdmin={isAdmin} />
+                                  {qtyText(leaf.confirmedQty)}
                                 </td>
                                 <td className="px-3 py-1.5 text-right font-medium text-slate-800">
                                   {formatCurrency(Math.round(leaf.confirmedAmount))}
@@ -780,7 +875,7 @@ export function DashboardClient({
         </table>
       </div>
       <p className="-mt-3 text-xs text-slate-400">
-        {topKind}ごとにまとめています。設定件数は「案件設定」で決めた件数、設定金額＝設定件数×案件のデフォルト単価、獲得件数は案件獲得の登録の合計です。進捗率＝獲得件数÷設定件数です。有効件数は、行の▶で開く単価ごとの欄に入力します（管理者のみ）。確定金額＝有効件数×単価です。
+        {topKind}ごとにまとめています。設定件数は「案件設定」で決めた件数、設定金額＝設定件数×案件のデフォルト単価、獲得件数は案件獲得の登録の合計です。進捗率＝獲得件数÷設定件数です。有効件数は、上の表で案件×単価ごとに入力します（管理者のみ）。この表のOPごとの有効件数は、獲得件数の比率で分けた値です。確定金額＝有効件数×単価です。
         行の▶を押すと単価ごとの件数が見えます。獲得件数にカーソルを当てると、登録日ごとの件数が表示されます。
       </p>
 
