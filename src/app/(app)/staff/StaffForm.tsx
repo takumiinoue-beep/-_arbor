@@ -13,10 +13,12 @@ export function StaffForm({
   action,
   profile,
   mode,
+  defaultMemberNo,
 }: {
   action: Action;
   profile?: Profile;
   mode: "create" | "edit";
+  defaultMemberNo?: number; // 新規登録のときに最初から入れておく番号
 }) {
   const [state, formAction, pending] = useActionState(action, null);
 
@@ -55,8 +57,8 @@ export function StaffForm({
           type="number"
           min={1}
           step={1}
-          defaultValue={profile?.member_no ?? ""}
-          placeholder={mode === "create" ? "空欄なら最後の番号になります" : ""}
+          defaultValue={profile?.member_no ?? defaultMemberNo ?? ""}
+          placeholder={mode === "create" ? "空欄なら最後の番号の次になります" : ""}
           className="rounded-md border border-slate-300 px-3 py-2 text-sm"
         />
         <p className="text-xs text-slate-400">案件設定では、番号の小さい順に上から並びます。</p>

@@ -5,6 +5,7 @@ import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { requireAdmin } from "@/lib/auth";
+import { nextMemberNo } from "@/lib/memberNo";
 import type { Role } from "@/types/database";
 
 type FormState = { error: string } | null;
@@ -43,18 +44,13 @@ export async function createStaff(_prevState: FormState, formData: FormData) {
 
   if (error) return { error: `登録に失敗しました: ${error.message}` };
 
-  // メンバー番号：未入力なら今ある一番大きい番号の次にする
+  // メンバー番号：未入力なら今ある一番大きい番号の次にする。
+  // profiles テーブルは、サービスロール（admin）ではなくログイン中の管理者の権限で更新する
+  // （サービスロールにはこのテーブルの権限を付けていないため）
+  const supabase = await createClient();
   let no = memberNo.value;
-  if (no === null) {
-    const { data: last } = await admin
-      .from("profiles")
-      .select("member_no")
-      .not("member_no", "is", null)
-      .order("member_no", { ascending: false })
-      .limit(1);
-    no = (last?.[0]?.member_no ?? 0) + 1;
-  }
-  const { error: noError } = await admin.from("profiles").update({ member_no: no }).eq("id", created.user.id);
+  if (no === null) no = await nextMemberNo(supabase);
+  const { error: noError } = await supabase.from("profiles").update({ member_no: no }).eq("id", created.user.id);
   if (noError) return { error: `担当者は登録しましたが、メンバー番号の設定に失敗しました: ${noError.message}` };
 
   revalidatePath("/invoices/company");
