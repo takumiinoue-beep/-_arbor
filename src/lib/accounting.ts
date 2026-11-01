@@ -342,6 +342,7 @@ export function buildActualInput(args: {
           break;
       }
       sga.add("法定福利費", idx, Number(member.monthly_social_insurance), `${member.name}（月額）`);
+      sga.add("旅費交通費", idx, Number(member.monthly_transport ?? 0), `${member.name}（交通費・月額）`);
 
       if (member.profile_id && member.incentive_tiers?.length) {
         const memberSales = salesByStaff.get(member.profile_id)?.get(month) ?? 0;

@@ -89,6 +89,7 @@ export type Member = {
   profile_id: string | null;
   monthly_cost: number;
   monthly_social_insurance: number;
+  monthly_transport: number; // 月額交通費（販管費「旅費交通費」に自動計上）
   incentive_sales_unit: number | null;
   incentive_amount: number | null;
   incentive_tiers: IncentiveTier[];

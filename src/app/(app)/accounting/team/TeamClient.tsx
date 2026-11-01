@@ -113,6 +113,14 @@ function MemberForm({
         </div>
       </div>
 
+      <div className="flex flex-col gap-1">
+        <label className={label}>月額交通費（円）</label>
+        <input name="monthly_transport" type="number" min={0} step={1} defaultValue={member?.monthly_transport ?? 0} className={field} />
+        <p className="text-xs text-slate-500">
+          開始月〜終了月の各月に、会計の販管費「旅費交通費」へ自動で計上します（計画・結果とも）。
+        </p>
+      </div>
+
       <div className="grid grid-cols-2 gap-4">
         <div className="flex flex-col gap-1">
           <label className={label}>
@@ -249,7 +257,7 @@ export function TeamClient({
     <div className="flex flex-col gap-4">
       <div className="flex items-center justify-between">
         <p className="text-xs text-slate-500">
-          ここで登録した人件費は、月次PLの「原価（労務費・外注費・インセンティブ）」「役員報酬」「給料手当」「法定福利費」に自動で反映されます。
+          ここで登録した人件費は、月次PLの「原価（労務費・外注費・インセンティブ）」「役員報酬」「給料手当」「法定福利費」「旅費交通費（月額交通費）」に自動で反映されます。
         </p>
         <button
           type="button"
@@ -268,6 +276,7 @@ export function TeamClient({
               <th className="px-3 py-2 text-left font-medium text-slate-500">区分</th>
               <th className="px-3 py-2 text-right font-medium text-slate-500">月額人件費</th>
               <th className="px-3 py-2 text-right font-medium text-slate-500">月額法定福利費</th>
+              <th className="px-3 py-2 text-right font-medium text-slate-500">月額交通費</th>
               <th className="px-3 py-2 text-left font-medium text-slate-500">期間</th>
               <th className="px-3 py-2 text-left font-medium text-slate-500">インセンティブ</th>
               <th className="px-3 py-2 text-left font-medium text-slate-500">操作</th>
@@ -281,6 +290,9 @@ export function TeamClient({
                 <td className="whitespace-nowrap px-3 py-2 text-right text-slate-700">{formatYen(Number(m.monthly_cost))}</td>
                 <td className="whitespace-nowrap px-3 py-2 text-right text-slate-700">
                   {formatYen(Number(m.monthly_social_insurance))}
+                </td>
+                <td className="whitespace-nowrap px-3 py-2 text-right text-slate-700">
+                  {formatYen(Number(m.monthly_transport ?? 0))}
                 </td>
                 <td className="whitespace-nowrap px-3 py-2 text-slate-600">{period(m)}</td>
                 <td className="whitespace-nowrap px-3 py-2 text-slate-600">{describeIncentive(m)}</td>
@@ -303,7 +315,7 @@ export function TeamClient({
             ))}
             {members.length === 0 && (
               <tr>
-                <td colSpan={7} className="px-3 py-6 text-center text-slate-400">
+                <td colSpan={8} className="px-3 py-6 text-center text-slate-400">
                   メンバーが登録されていません
                 </td>
               </tr>

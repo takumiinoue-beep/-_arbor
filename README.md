@@ -68,6 +68,7 @@ Supabaseダッシュボードの「SQL Editor」で、`supabase/migrations/` 配
 | [`0029_update_acquisition.sql`](supabase/migrations/0029_update_acquisition.sql) | 案件獲得の登録の修正：RPC `update_acquisition`（獲得日・計上月・件数。管理者のみ） |
 | [`0030_confirmed_totals.sql`](supabase/migrations/0030_confirmed_totals.sql) | 有効件数を月×案件×単価の合計で入力：`confirmed_totals`（OPごとの有効件数は獲得件数の比率で按分。0028 の `confirmed_quantities` は使わなくなったが残す） |
 | [`0031_project_client.sql`](supabase/migrations/0031_project_client.sql) | 案件の取引先：`projects.client_id`（任意）。請求書発行の一括追加で、選んだ取引先の案件だけを拾う |
+| [`0032_member_transport.sql`](supabase/migrations/0032_member_transport.sql) | メンバーの月額交通費：`members.monthly_transport`（会計の販管費「旅費交通費」に自動計上。既存は0円） |
 
 ### 3. 環境変数を設定
 

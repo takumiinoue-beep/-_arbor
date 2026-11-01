@@ -210,6 +210,7 @@ export async function saveMember(_prev: ActionResult, formData: FormData): Promi
   const notes = String(formData.get("notes") ?? "").trim();
   const monthlyCost = parseAmount(formData.get("monthly_cost") ?? "0", "月額人件費");
   const social = parseAmount(formData.get("monthly_social_insurance") ?? "0", "月額法定福利費");
+  const transport = parseAmount(formData.get("monthly_transport") ?? "0", "月額交通費");
   const tiersRaw = String(formData.get("incentive_tiers") ?? "[]");
 
   if (!name) return { error: "メンバーを選択してください。" };
@@ -219,6 +220,7 @@ export async function saveMember(_prev: ActionResult, formData: FormData): Promi
   if (endMonth && endMonth < startMonth) return { error: "終了月は開始月以降にしてください。" };
   if (!monthlyCost.ok) return { error: monthlyCost.error };
   if (!social.ok) return { error: social.error };
+  if (!transport.ok) return { error: transport.error };
 
   const tiers = parseIncentiveTiers(tiersRaw);
   if (!tiers.ok) return { error: tiers.error };
@@ -229,6 +231,7 @@ export async function saveMember(_prev: ActionResult, formData: FormData): Promi
     profile_id: profileId || null,
     monthly_cost: monthlyCost.value,
     monthly_social_insurance: social.value,
+    monthly_transport: transport.value,
     incentive_sales_unit: null,
     incentive_amount: null,
     incentive_tiers: tiers.value,
