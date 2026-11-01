@@ -12,13 +12,16 @@ export function acquisitionMonth(a: { acquired_date: string; target_month?: stri
   return (a.target_month ?? a.acquired_date).slice(0, 7);
 }
 
-// ダッシュボードで入力した有効件数（confirmed_totals の1行）。月 × 案件 × 単価ごとの、全OPの合計
+// 有効件数の入力。OPごとの入力（confirmed_quantities）が主で、
+// 以前に入力した月×案件×単価の合計（confirmed_totals）は、OPごとの入力が無い行の初期値として使う
 export type ConfirmedRow = {
   month: string; // "YYYY-MM-01"
   project_name: string;
   unit_price: number;
-  quantity: number;
+  quantity: number; // 全OPの合計
 };
+export type ConfirmedOpRow = ConfirmedRow & { staff_id: string }; // quantity はそのOPの有効件数
+export type ConfirmedData = { totals: ConfirmedRow[]; perOp: ConfirmedOpRow[] };
 
 // 確定の1行（月 × OP × 案件 × 単価）。確定金額＝有効件数×単価
 export type ConfirmedLine = {
@@ -26,17 +29,17 @@ export type ConfirmedLine = {
   staffId: string;
   projectName: string;
   unitPrice: number;
-  quantity: number; // OPごとの有効件数（合計を、獲得件数の比率で按分した値）
+  quantity: number; // そのOPの有効件数
   amount: number;
 };
 
-// 入力した有効件数（合計）を、OPごとの行に按分する。
-// その月・案件・単価の獲得があるものだけが対象で、獲得を削除して見えなくなった入力は含めない。
-// 按分は、そのOPの獲得件数 ÷ 全OPの獲得件数。
+// 入力した有効件数を、OPごとの行にする。
+// その月・案件・単価の獲得があるOPだけが対象で、獲得を削除して見えなくなった入力は含めない。
+// OPごとの入力があればそれを使い、無ければ、合計の入力を獲得件数の比率で按分した値、それも無ければ0件。
 export function confirmedLines(args: {
   acquisitions: SalesAcquisition[];
   nameById: Map<string, string>; // 案件id -> 案件名
-  confirmed: ConfirmedRow[];
+  confirmed: ConfirmedData;
 }): ConfirmedLine[] {
   const { acquisitions, nameById, confirmed } = args;
 
@@ -51,23 +54,28 @@ export function confirmedLines(args: {
     groups.set(key, byStaff);
   }
 
+  const totalBy = new Map(
+    confirmed.totals.map((c) => [`${c.month.slice(0, 7)}|${c.project_name}|${Number(c.unit_price)}`, Number(c.quantity)])
+  );
+  const perOpBy = new Map(
+    confirmed.perOp.map((c) => [
+      `${c.month.slice(0, 7)}|${c.project_name}|${Number(c.unit_price)}|${c.staff_id}`,
+      Number(c.quantity),
+    ])
+  );
+
   const lines: ConfirmedLine[] = [];
-  for (const c of confirmed) {
-    const month = c.month.slice(0, 7);
-    const byStaff = groups.get(`${month}|${c.project_name}|${c.unit_price}`);
-    if (!byStaff) continue;
+  for (const [key, byStaff] of groups) {
+    const [month, projectName, unitPriceText] = key.split("|");
+    const unitPrice = Number(unitPriceText);
     const acquiredTotal = Array.from(byStaff.values()).reduce((sum, q) => sum + q, 0);
-    if (acquiredTotal <= 0) continue;
+    const total = totalBy.get(key);
     for (const [staffId, acquiredQty] of byStaff) {
-      const quantity = (Number(c.quantity) * acquiredQty) / acquiredTotal;
-      lines.push({
-        month,
-        staffId,
-        projectName: c.project_name,
-        unitPrice: Number(c.unit_price),
-        quantity,
-        amount: quantity * Number(c.unit_price),
-      });
+      const own = perOpBy.get(`${key}|${staffId}`);
+      const quantity =
+        own !== undefined ? own : total !== undefined && acquiredTotal > 0 ? (total * acquiredQty) / acquiredTotal : 0;
+      if (quantity === 0) continue;
+      lines.push({ month, staffId, projectName, unitPrice, quantity, amount: quantity * unitPrice });
     }
   }
   return lines;

@@ -113,33 +113,35 @@ export async function createAcquisition(
   return null;
 }
 
-// 案件×単価ごとの有効件数（全OPの合計）を保存する（管理者のみ）。month は "YYYY-MM"
-export async function setConfirmedTotal(input: {
-  month: string;
-  projectName: string;
-  unitPrice: number;
-  quantity: number;
-}): Promise<{ error: string } | null> {
+// OPごと・案件×単価ごとの有効件数を、まとめて保存する（管理者のみ）。month は "YYYY-MM"
+export async function setConfirmedQuantities(
+  rows: { month: string; staffId: string; projectName: string; unitPrice: number; quantity: number }[]
+): Promise<{ error: string } | null> {
   await requireAdmin();
+  if (rows.length === 0) return null;
 
-  if (!/^\d{4}-\d{2}$/.test(input.month)) return { error: "月の形式が不正です。" };
-  if (!Number.isFinite(input.quantity) || input.quantity < 0) return { error: "有効件数は0以上で入力してください。" };
+  for (const r of rows) {
+    if (!/^\d{4}-\d{2}$/.test(r.month)) return { error: "月の形式が不正です。" };
+    if (!Number.isFinite(r.quantity) || r.quantity < 0) return { error: "有効件数は0以上で入力してください。" };
+  }
 
+  const now = new Date().toISOString();
   const supabase = await createClient();
-  const { error } = await supabase.from("confirmed_totals").upsert(
-    {
-      month: `${input.month}-01`,
-      project_name: input.projectName,
-      unit_price: input.unitPrice,
-      quantity: Math.round(input.quantity * 100) / 100,
-      updated_at: new Date().toISOString(),
-    },
-    { onConflict: "month,project_name,unit_price" }
+  const { error } = await supabase.from("confirmed_quantities").upsert(
+    rows.map((r) => ({
+      month: `${r.month}-01`,
+      staff_id: r.staffId,
+      project_name: r.projectName,
+      unit_price: r.unitPrice,
+      quantity: Math.round(r.quantity * 100) / 100,
+      updated_at: now,
+    })),
+    { onConflict: "month,staff_id,project_name,unit_price" }
   );
   if (error) {
     return {
-      error: error.message.includes("confirmed_totals")
-        ? "保存できませんでした。マイグレーション 0030 を実行してください。"
+      error: error.message.includes("confirmed_quantities")
+        ? "保存できませんでした。マイグレーション 0028 を実行してください。"
         : `保存できませんでした: ${error.message}`,
     };
   }

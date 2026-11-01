@@ -5,11 +5,11 @@ import type { Acquisition, Profile, ProjectAssignment } from "@/types/database";
 import { formatCurrency } from "@/lib/format";
 import { Progress } from "@/components/common/Progress";
 import { defaultUnitPrice, latestByName } from "@/lib/projects";
-import { acquisitionMonth, confirmedLines, type ConfirmedLine, type ConfirmedRow } from "@/lib/sales";
+import { acquisitionMonth, confirmedLines, type ConfirmedData, type ConfirmedLine } from "@/lib/sales";
 import { AcquisitionButton, type AcquisitionProject } from "./AcquisitionButton";
 import Modal from "@/components/common/Modal";
 import { DeleteAcquisitionButton } from "./DeleteAcquisitionButton";
-import { setConfirmedTotal, updateAcquisition } from "./actions";
+import { setConfirmedQuantities, updateAcquisition } from "./actions";
 
 export type AcquisitionRow = Pick<
   Acquisition,
@@ -333,7 +333,7 @@ function QtyWithDetail({
   );
 }
 
-// 案件×単価ごとの有効件数（全OPの合計）の入力。管理者のみ編集でき、Enter か枠の外をクリックで保存する
+// 案件×単価ごとの獲得件数・有効件数（全OPの合計）
 type TotalRow = {
   key: string;
   month: string; // "YYYY-MM"
@@ -343,50 +343,222 @@ type TotalRow = {
   confirmedQty: number;
 };
 
-function ConfirmedTotalInput({ row, isAdmin }: { row: TotalRow; isAdmin: boolean }) {
-  const [value, setValue] = useState(String(row.confirmedQty));
+// 有効件数の入力（管理者）。選んだ月の、OPごとの案件×単価を一覧にして、有効件数を入力する
+type ConfirmRow = {
+  key: string;
+  staffId: string;
+  opName: string;
+  projectName: string;
+  unitPrice: number;
+  acquiredQty: number;
+  current: number; // いまの有効件数
+};
+
+const round2 = (n: number) => Math.round(n * 100) / 100;
+
+function EnterConfirmedModal({
+  acquisitions,
+  lines,
+  monthTabs,
+  defaultMonth,
+  monthText,
+  rankOf,
+  onClose,
+}: {
+  acquisitions: AcquisitionRow[];
+  lines: ConfirmedLine[];
+  monthTabs: string[];
+  defaultMonth: string;
+  monthText: (m: string) => string;
+  rankOf: (staffId: string) => number;
+  onClose: () => void;
+}) {
+  const [month, setMonth] = useState(defaultMonth);
+
+  const rows = useMemo(() => {
+    const currentBy = new Map(
+      lines.filter((l) => l.month === month).map((l) => [`${l.staffId}|${l.projectName}|${l.unitPrice}`, l.quantity])
+    );
+    const map = new Map<string, ConfirmRow>();
+    for (const a of acquisitions) {
+      if (acquisitionMonth(a) !== month) continue;
+      const projectName = a.project?.name;
+      if (!projectName) continue;
+      const key = `${a.staff_id}|${projectName}|${a.unit_price}`;
+      const cur = map.get(key) ?? {
+        key,
+        staffId: a.staff_id,
+        opName: a.staff?.name ?? "不明",
+        projectName,
+        unitPrice: Number(a.unit_price),
+        acquiredQty: 0,
+        current: round2(currentBy.get(key) ?? 0),
+      };
+      cur.acquiredQty += a.quantity;
+      map.set(key, cur);
+    }
+    return Array.from(map.values()).sort(
+      (a, b) =>
+        rankOf(a.staffId) - rankOf(b.staffId) ||
+        cmp(a.opName, b.opName) ||
+        cmp(a.projectName, b.projectName) ||
+        b.unitPrice - a.unitPrice
+    );
+  }, [acquisitions, lines, month, rankOf]);
+
+  return (
+    <Modal isOpen onClose={onClose} title="有効件数の入力" size="2xl">
+      <div className="mb-4 flex flex-wrap items-center gap-3 text-sm">
+        <label className="font-medium text-slate-700">月</label>
+        <select
+          value={month}
+          onChange={(e) => setMonth(e.target.value)}
+          className="rounded-md border border-slate-300 px-3 py-1.5 text-sm"
+        >
+          {monthTabs.map((m) => (
+            <option key={m} value={m}>
+              {monthText(m)}
+            </option>
+          ))}
+        </select>
+        <span className="text-xs text-slate-400">OPごとに、案件×単価ごとの有効件数を入力します。</span>
+      </div>
+      <EnterConfirmedForm key={month} month={month} rows={rows} onClose={onClose} />
+    </Modal>
+  );
+}
+
+function EnterConfirmedForm({ month, rows, onClose }: { month: string; rows: ConfirmRow[]; onClose: () => void }) {
+  const [values, setValues] = useState<Record<string, string>>(() =>
+    Object.fromEntries(rows.map((r) => [r.key, String(r.current)]))
+  );
+  const [error, setError] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
-  if (!isAdmin) return <>{qtyText(row.confirmedQty)}</>;
+
+  // OPごとにまとめる（rows は OP の順に並んでいる）
+  const byOp = useMemo(() => {
+    const map = new Map<string, { opName: string; rows: ConfirmRow[] }>();
+    for (const r of rows) {
+      const cur = map.get(r.staffId) ?? { opName: r.opName, rows: [] };
+      cur.rows.push(r);
+      map.set(r.staffId, cur);
+    }
+    return Array.from(map.values());
+  }, [rows]);
+
+  const numOf = (key: string) => {
+    const t = (values[key] ?? "").trim();
+    return t === "" ? 0 : Number(t);
+  };
+  const totalConfirmed = sum(rows, (r) => numOf(r.key));
+  const totalAmount = sum(rows, (r) => numOf(r.key) * r.unitPrice);
 
   function save() {
-    const n = Number(value);
-    if (value.trim() === "" || !Number.isFinite(n) || n < 0) {
-      setValue(String(row.confirmedQty));
-      return;
-    }
-    if (n === row.confirmedQty) return;
-    startTransition(async () => {
-      const result = await setConfirmedTotal({
-        month: row.month,
-        projectName: row.projectName,
-        unitPrice: row.unitPrice,
-        quantity: n,
-      });
-      if (result?.error) {
-        alert(result.error);
-        setValue(String(row.confirmedQty));
+    for (const r of rows) {
+      const n = numOf(r.key);
+      if (!Number.isFinite(n) || n < 0) {
+        setError(`「${r.opName}／${r.projectName}」の有効件数は、0以上の数字で入力してください。`);
+        return;
       }
+    }
+    startTransition(async () => {
+      const result = await setConfirmedQuantities(
+        rows.map((r) => ({
+          month,
+          staffId: r.staffId,
+          projectName: r.projectName,
+          unitPrice: r.unitPrice,
+          quantity: numOf(r.key),
+        }))
+      );
+      if (result?.error) setError(result.error);
+      else onClose();
     });
   }
 
+  if (rows.length === 0) {
+    return <p className="py-6 text-center text-sm text-slate-400">この月は、案件獲得の登録がありません。</p>;
+  }
+
   return (
-    <span className="inline-flex items-center gap-1">
-      <input
-        type="number"
-        min={0}
-        step="any"
-        value={value}
-        disabled={pending}
-        onChange={(e) => setValue(e.target.value)}
-        onBlur={save}
-        onKeyDown={(e) => {
-          if (e.key === "Enter") e.currentTarget.blur();
-        }}
-        aria-label="有効件数"
-        className="w-20 rounded border border-slate-300 bg-white px-2 py-1 text-right text-sm disabled:opacity-50"
-      />
-      件
-    </span>
+    <div className="flex flex-col gap-4">
+      <div className="overflow-x-auto rounded-lg border border-slate-200">
+        <table className="min-w-full text-sm">
+          <thead className="bg-slate-50">
+            <tr>
+              <th className="px-3 py-2 text-left font-medium text-slate-500">案件名</th>
+              <th className="px-3 py-2 text-right font-medium text-slate-500">単価</th>
+              <th className="px-3 py-2 text-right font-medium text-slate-500">獲得件数</th>
+              <th className="px-3 py-2 text-right font-medium text-slate-500">有効件数</th>
+              <th className="px-3 py-2 text-right font-medium text-slate-500">確定金額</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-slate-100">
+            {byOp.map((op) => (
+              <Fragment key={op.rows[0].staffId}>
+                <tr className="bg-slate-700">
+                  <td colSpan={5} className="px-3 py-1.5 font-bold text-white">
+                    {op.opName}
+                  </td>
+                </tr>
+                {op.rows.map((r) => (
+                  <tr key={r.key}>
+                    <td className="py-1.5 pr-3 pl-6 text-slate-700">{r.projectName}</td>
+                    <td className="px-3 py-1.5 text-right text-slate-700">{formatCurrency(r.unitPrice)}</td>
+                    <td className="px-3 py-1.5 text-right text-slate-700">{qtyText(r.acquiredQty)}</td>
+                    <td className="px-3 py-1.5 text-right">
+                      <span className="inline-flex items-center gap-1">
+                        <input
+                          type="number"
+                          min={0}
+                          step="any"
+                          value={values[r.key] ?? ""}
+                          onChange={(e) => setValues((prev) => ({ ...prev, [r.key]: e.target.value }))}
+                          aria-label={`${op.opName}　${r.projectName}　有効件数`}
+                          className="w-20 rounded border border-slate-300 bg-white px-2 py-1 text-right text-sm"
+                        />
+                        件
+                      </span>
+                    </td>
+                    <td className="px-3 py-1.5 text-right font-medium text-slate-900">
+                      {formatCurrency(Math.round(numOf(r.key) * r.unitPrice))}
+                    </td>
+                  </tr>
+                ))}
+              </Fragment>
+            ))}
+          </tbody>
+          <tfoot className="border-t-2 border-slate-300 bg-slate-100 font-bold text-slate-900">
+            <tr>
+              <td className="px-3 py-2" colSpan={2}>
+                合計
+              </td>
+              <td className="px-3 py-2 text-right">{qtyText(sum(rows, (r) => r.acquiredQty))}</td>
+              <td className="px-3 py-2 text-right">{qtyText(totalConfirmed)}</td>
+              <td className="px-3 py-2 text-right">{formatCurrency(Math.round(totalAmount))}</td>
+            </tr>
+          </tfoot>
+        </table>
+      </div>
+      {error && <p className="rounded-md bg-red-50 px-3 py-2 text-sm text-red-600">{error}</p>}
+      <div className="flex gap-3">
+        <button
+          type="button"
+          onClick={save}
+          disabled={pending}
+          className="rounded-md bg-slate-900 px-4 py-2 text-sm font-medium text-white hover:bg-slate-700 disabled:opacity-50"
+        >
+          {pending ? "保存中..." : "保存する"}
+        </button>
+        <button
+          type="button"
+          onClick={onClose}
+          className="rounded-md border border-slate-200 px-4 py-2 text-sm text-slate-600 hover:bg-slate-100"
+        >
+          キャンセル
+        </button>
+      </div>
+    </div>
   );
 }
 
@@ -483,7 +655,7 @@ export function DashboardClient({
   assignments: DashboardAssignment[];
   staffList: Pick<Profile, "id" | "name">[];
   acquisitions: AcquisitionRow[];
-  confirmed: ConfirmedRow[];
+  confirmed: ConfirmedData;
   currentUserId: string;
   isAdmin: boolean;
   todayISO: string;
@@ -494,6 +666,7 @@ export function DashboardClient({
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
   const [dailyExpanded, setDailyExpanded] = useState<Set<string>>(new Set());
   const [editing, setEditing] = useState<SalesEntry | null>(null);
+  const [confirming, setConfirming] = useState(false);
 
   function toggle(setter: typeof setExpanded, key: string) {
     setter((prev) => {
@@ -535,17 +708,19 @@ export function DashboardClient({
     [projects]
   );
 
-  // OPごとの有効件数＝入力した合計を、獲得件数の比率で按分した値
+  // OPごとの有効件数（入力した値。OPごとの入力が無い行は、以前に入力した合計を獲得件数の比率で按分した値）
   const lines = useMemo(
     () => confirmedLines({ acquisitions, nameById, confirmed }),
     [acquisitions, nameById, confirmed]
   );
 
-  // 案件 × 単価 ごとの獲得件数（全OPの合計）と、入力した有効件数
+  // 案件 × 単価 ごとの獲得件数と有効件数（全OPの合計）
   const totalRows = useMemo(() => {
-    const confirmedBy = new Map(
-      confirmed.map((c) => [`${c.month.slice(0, 7)}|${c.project_name}|${c.unit_price}`, Number(c.quantity)])
-    );
+    const confirmedBy = new Map<string, number>();
+    for (const l of lines) {
+      const key = `${l.month}|${l.projectName}|${l.unitPrice}`;
+      confirmedBy.set(key, (confirmedBy.get(key) ?? 0) + l.quantity);
+    }
     const map = new Map<string, TotalRow>();
     for (const a of filteredAcquisitions) {
       const projectName = a.project?.name;
@@ -558,7 +733,7 @@ export function DashboardClient({
         projectName,
         unitPrice: Number(a.unit_price),
         acquiredQty: 0,
-        confirmedQty: confirmedBy.get(key) ?? 0,
+        confirmedQty: round2(confirmedBy.get(key) ?? 0),
       };
       cur.acquiredQty += a.quantity;
       map.set(key, cur);
@@ -566,7 +741,7 @@ export function DashboardClient({
     return Array.from(map.values()).sort(
       (a, b) => a.month.localeCompare(b.month) || cmp(a.projectName, b.projectName) || b.unitPrice - a.unitPrice
     );
-  }, [filteredAcquisitions, confirmed]);
+  }, [filteredAcquisitions, lines]);
 
   const cells = useMemo(
     () =>
@@ -635,6 +810,17 @@ export function DashboardClient({
   return (
     <div className="flex flex-col gap-6">
       <EditAcquisitionModal entry={editing} onClose={() => setEditing(null)} />
+      {confirming && (
+        <EnterConfirmedModal
+          acquisitions={acquisitions}
+          lines={lines}
+          monthTabs={monthTabs}
+          defaultMonth={monthTab === "all" ? currentMonthKey : monthTab}
+          monthText={monthText}
+          rankOf={rankOf}
+          onClose={() => setConfirming(false)}
+        />
+      )}
       <div className="flex flex-wrap gap-1 border-b border-slate-200">
         <button
           type="button"
@@ -683,16 +869,26 @@ export function DashboardClient({
             </button>
           ))}
         </div>
-        <AcquisitionButton projects={projects} staffList={staffList} currentUserId={currentUserId} progress={progress} />
+        <div className="flex items-center gap-2">
+          {isAdmin && (
+            <button
+              type="button"
+              onClick={() => setConfirming(true)}
+              className="rounded-md border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-100"
+            >
+              有効入力
+            </button>
+          )}
+          <AcquisitionButton projects={projects} staffList={staffList} currentUserId={currentUserId} progress={progress} />
+        </div>
       </div>
 
       {totalRows.length > 0 && (
         <div className="rounded-lg border border-slate-200 bg-white">
           <div className="border-b border-slate-200 px-4 py-2.5">
-            <h2 className="text-sm font-semibold text-slate-700">有効件数の入力（案件×単価ごと）</h2>
+            <h2 className="text-sm font-semibold text-slate-700">有効件数（案件×単価ごと）</h2>
             <p className="text-xs text-slate-400">
-              獲得件数は全OPの合計です。有効件数を入力すると、確定金額（有効件数×単価）が出て、会計の売上と請求書発行に反映されます。
-              OPごとの有効件数は、獲得件数の比率で自動で分けます。
+              全OPの合計です。有効件数は右上の「有効入力」から、OPごとに入力します。確定金額（有効件数×単価）は、会計の売上と請求書発行に反映されます。
             </p>
           </div>
           <div className="overflow-x-auto">
@@ -714,9 +910,7 @@ export function DashboardClient({
                     <td className="px-3 py-1.5 text-slate-700">{row.projectName}</td>
                     <td className="px-3 py-1.5 text-right text-slate-700">{formatCurrency(row.unitPrice)}</td>
                     <td className="px-3 py-1.5 text-right text-slate-700">{qtyText(row.acquiredQty)}</td>
-                    <td className="px-3 py-1.5 text-right text-slate-700">
-                      <ConfirmedTotalInput key={row.confirmedQty} row={row} isAdmin={isAdmin} />
-                    </td>
+                    <td className="px-3 py-1.5 text-right text-slate-700">{qtyText(row.confirmedQty)}</td>
                     <td className="px-3 py-1.5 text-right font-medium text-slate-900">
                       {formatCurrency(Math.round(row.confirmedQty * row.unitPrice))}
                     </td>
@@ -902,7 +1096,7 @@ export function DashboardClient({
         </table>
       </div>
       <p className="-mt-3 text-xs text-slate-400">
-        {topKind}ごとにまとめています。設定件数は「案件設定」で決めた件数、設定金額＝設定件数×案件のデフォルト単価、獲得件数は案件獲得の登録の合計です。進捗率＝獲得件数÷設定件数です。有効件数は、上の表で案件×単価ごとに入力します（管理者のみ）。この表のOPごとの有効件数は、獲得件数の比率で分けた値です。確定金額＝有効件数×単価です。
+        {topKind}ごとにまとめています。設定件数は「案件設定」で決めた件数、設定金額＝設定件数×案件のデフォルト単価、獲得件数は案件獲得の登録の合計です。進捗率＝獲得件数÷設定件数です。有効件数は、「有効入力」ボタンでOPごと・案件×単価ごとに入力します（管理者のみ）。確定金額＝有効件数×単価です。
         案件ごとの表示では、案件の行を押すとOPごとの内訳が開きます。OPの行の▶を押すと単価ごとの件数が見えます。獲得件数にカーソルを当てると、登録日ごとの件数が表示されます。
       </p>
 

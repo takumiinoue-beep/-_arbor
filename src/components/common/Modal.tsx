@@ -1,6 +1,6 @@
 "use client";
 
-const WIDTHS = { sm: "max-w-sm", md: "max-w-md", lg: "max-w-lg", xl: "max-w-xl" } as const;
+const WIDTHS = { sm: "max-w-sm", md: "max-w-md", lg: "max-w-lg", xl: "max-w-xl", "2xl": "max-w-3xl" } as const;
 
 export default function Modal({
   isOpen,
