@@ -755,20 +755,44 @@ export function DashboardClient({
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-100">
-            {groups.map((group) => (
+            {groups.map((group) => {
+              // 案件ごとの表示では、案件の行に合計を出し、OPごとの行は案件を押すと開く
+              const collapsible = view === "project";
+              const open = !collapsible || expanded.has(group.key);
+              return (
               <Fragment key={group.key}>
-                <tr className="bg-slate-700">
-                  <td colSpan={COLS} className="px-3 py-2 font-bold text-white">
-                    {group.label}
-                  </td>
-                </tr>
-                {group.cells.map((cell) => {
+                {collapsible ? (
+                  <tr className="cursor-pointer bg-slate-700 font-bold text-white hover:bg-slate-600" onClick={() => toggle(setExpanded, group.key)}>
+                    <td className="px-3 py-2">
+                      <span className="flex items-center gap-1.5">
+                        <span className="inline-block w-3 text-xs text-slate-300">{open ? "▼" : "▶"}</span>
+                        {group.label}
+                      </span>
+                    </td>
+                    <td className="px-3 py-2 text-right">{qtyText(group.target)}</td>
+                    <td className="px-3 py-2 text-right">{formatCurrency(group.targetAmount)}</td>
+                    <td className="px-3 py-2 text-right">{qtyText(group.acquiredQty)}</td>
+                    <td className="px-3 py-2 text-right">
+                      <Progress acquired={group.acquiredQty} target={group.target} />
+                    </td>
+                    <td className="px-3 py-2 text-right">{formatCurrency(group.acquiredAmount)}</td>
+                    <td className="px-3 py-2 text-right">{qtyText(group.confirmedQty)}</td>
+                    <td className="px-3 py-2 text-right">{formatCurrency(Math.round(group.confirmedAmount))}</td>
+                  </tr>
+                ) : (
+                  <tr className="bg-slate-700">
+                    <td colSpan={COLS} className="px-3 py-2 font-bold text-white">
+                      {group.label}
+                    </td>
+                  </tr>
+                )}
+                {open && group.cells.map((cell) => {
                   const cellKey = `${group.key}|${cell.key}`;
                   const canExpand = cell.leaves.length > 0;
                   return (
                     <Fragment key={cellKey}>
                       <tr className="hover:bg-slate-50">
-                        <td className="px-3 py-2 text-slate-700">
+                        <td className="py-2 pr-3 pl-8 text-slate-700">
                           {canExpand ? (
                             <button
                               type="button"
@@ -810,7 +834,7 @@ export function DashboardClient({
                           return (
                             <Fragment key={leafKey}>
                               <tr className="bg-slate-50/70 text-xs">
-                                <td className="px-3 py-1.5 pl-9 text-slate-600">
+                                <td className="py-1.5 pr-3 pl-14 text-slate-600">
                                   {monthTab === "all" && `${monthText(leaf.month)}　`}単価 {formatCurrency(leaf.unitPrice)}
                                 </td>
                                 <td className="px-3 py-1.5" colSpan={2} />
@@ -834,8 +858,9 @@ export function DashboardClient({
                     </Fragment>
                   );
                 })}
+                {open && !collapsible && (
                 <tr className="border-t-2 border-slate-300 bg-slate-200 font-bold text-slate-900">
-                  <td className="px-3 py-2">{group.label}　小計</td>
+                  <td className="py-2 pr-3 pl-8">{group.label}　小計</td>
                   <td className="px-3 py-2 text-right">{qtyText(group.target)}</td>
                   <td className="px-3 py-2 text-right">{formatCurrency(group.targetAmount)}</td>
                   <td className="px-3 py-2 text-right">{qtyText(group.acquiredQty)}</td>
@@ -846,8 +871,10 @@ export function DashboardClient({
                   <td className="px-3 py-2 text-right">{qtyText(group.confirmedQty)}</td>
                   <td className="px-3 py-2 text-right">{formatCurrency(Math.round(group.confirmedAmount))}</td>
                 </tr>
+                )}
               </Fragment>
-            ))}
+              );
+            })}
             {cells.length === 0 && (
               <tr>
                 <td colSpan={COLS} className="px-3 py-6 text-center text-slate-400">
@@ -876,7 +903,7 @@ export function DashboardClient({
       </div>
       <p className="-mt-3 text-xs text-slate-400">
         {topKind}ごとにまとめています。設定件数は「案件設定」で決めた件数、設定金額＝設定件数×案件のデフォルト単価、獲得件数は案件獲得の登録の合計です。進捗率＝獲得件数÷設定件数です。有効件数は、上の表で案件×単価ごとに入力します（管理者のみ）。この表のOPごとの有効件数は、獲得件数の比率で分けた値です。確定金額＝有効件数×単価です。
-        行の▶を押すと単価ごとの件数が見えます。獲得件数にカーソルを当てると、登録日ごとの件数が表示されます。
+        案件ごとの表示では、案件の行を押すとOPごとの内訳が開きます。OPの行の▶を押すと単価ごとの件数が見えます。獲得件数にカーソルを当てると、登録日ごとの件数が表示されます。
       </p>
 
       <div className="rounded-lg border border-slate-200 bg-white p-4">
