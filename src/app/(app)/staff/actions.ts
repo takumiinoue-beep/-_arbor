@@ -104,6 +104,6 @@ export async function deleteStaff(id: string): Promise<{ error: string } | null>
 
   revalidatePath("/invoices/company");
   revalidatePath("/projects");
-  revalidatePath("/accounting/members");
+  revalidatePath("/accounting/team");
   return null;
 }

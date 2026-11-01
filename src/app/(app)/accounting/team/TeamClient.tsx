@@ -21,6 +21,9 @@ function describeIncentive(m: Member): string {
 
 type TierRow = { threshold: string; amount: string };
 
+// 自社情報に無い名前のまま保存するときの選択肢の値（既存の登録を壊さないため）
+const KEEP_NAME = "__keep__";
+
 function MemberForm({
   member,
   staffList,
@@ -35,6 +38,9 @@ function MemberForm({
   const [state, formAction, pending] = useActionState(saveMember, null);
   const wasPending = useRef(false);
   const router = useRouter();
+  // 選べるのは、自社情報の担当者。連携していない（名前だけの）既存の登録は、同じ名前の担当者があればそれを選んだ状態にする
+  const matchedProfileId = member?.profile_id ?? staffList.find((s) => s.name === member?.name)?.id ?? "";
+  const unlinked = member !== null && matchedProfileId === "";
   const [tiers, setTiers] = useState<TierRow[]>(
     (member?.incentive_tiers ?? []).map((t) => ({ threshold: String(t.threshold), amount: String(t.amount) }))
   );
@@ -61,9 +67,19 @@ function MemberForm({
       <div className="grid grid-cols-2 gap-4">
         <div className="flex flex-col gap-1">
           <label className={label}>
-            名前 <span className="text-red-500">*</span>
+            メンバー <span className="text-red-500">*</span>
           </label>
-          <input name="name" required defaultValue={member?.name} className={field} />
+          {member !== null && unlinked && <input type="hidden" name="name" value={member.name} />}
+          <select name="profile_id" required defaultValue={unlinked ? KEEP_NAME : matchedProfileId} className={field}>
+            <option value="">選択してください</option>
+            {member !== null && unlinked && <option value={KEEP_NAME}>{member.name}（自社情報に未登録）</option>}
+            {staffList.map((s) => (
+              <option key={s.id} value={s.id}>
+                {s.name}
+              </option>
+            ))}
+          </select>
+          <p className="text-xs text-slate-500">自社情報の担当者から選びます。</p>
         </div>
         <div className="flex flex-col gap-1">
           <label className={label}>
@@ -172,20 +188,9 @@ function MemberForm({
           ＋ 段階を追加
         </button>
 
-        <div className="mt-3 flex flex-col gap-1">
-          <label className={label}>売上の対象となるログインアカウント（OP）</label>
-          <select name="profile_id" defaultValue={member?.profile_id ?? ""} className={field}>
-            <option value="">紐づけない（インセンティブは計算されません）</option>
-            {staffList.map((s) => (
-              <option key={s.id} value={s.id}>
-                {s.name}
-              </option>
-            ))}
-          </select>
-          <p className="text-xs text-slate-500">
-            紐づけたOPの月間売上（請求金額）で判定し、原価（外注費）の「インセンティブ」に計上します。
-          </p>
-        </div>
+        <p className="mt-3 text-xs text-slate-500">
+          選んだメンバーの月間売上（請求金額）で判定し、原価（外注費）の「インセンティブ」に計上します。
+        </p>
       </div>
 
       <div className="flex flex-col gap-1">
@@ -215,7 +220,7 @@ function MemberForm({
   );
 }
 
-export function MembersClient({
+export function TeamClient({
   members,
   staffList,
   todayISO,
@@ -227,7 +232,6 @@ export function MembersClient({
   const [editing, setEditing] = useState<Member | "new" | null>(null);
   const [pending, startTransition] = useTransition();
   const router = useRouter();
-  const staffName = new Map(staffList.map((s) => [s.id, s.name]));
 
   function handleDelete(m: Member) {
     if (!confirm(`「${m.name}」を削除しますか？過去のPLからもこのメンバーの人件費が消えます。`)) return;
@@ -260,13 +264,12 @@ export function MembersClient({
         <table className="min-w-full divide-y divide-slate-200 text-sm">
           <thead className="bg-slate-50">
             <tr>
-              <th className="px-3 py-2 text-left font-medium text-slate-500">名前</th>
+              <th className="px-3 py-2 text-left font-medium text-slate-500">メンバー</th>
               <th className="px-3 py-2 text-left font-medium text-slate-500">区分</th>
               <th className="px-3 py-2 text-right font-medium text-slate-500">月額人件費</th>
               <th className="px-3 py-2 text-right font-medium text-slate-500">月額法定福利費</th>
               <th className="px-3 py-2 text-left font-medium text-slate-500">期間</th>
               <th className="px-3 py-2 text-left font-medium text-slate-500">インセンティブ</th>
-              <th className="px-3 py-2 text-left font-medium text-slate-500">OP</th>
               <th className="px-3 py-2 text-left font-medium text-slate-500">操作</th>
             </tr>
           </thead>
@@ -281,9 +284,6 @@ export function MembersClient({
                 </td>
                 <td className="whitespace-nowrap px-3 py-2 text-slate-600">{period(m)}</td>
                 <td className="whitespace-nowrap px-3 py-2 text-slate-600">{describeIncentive(m)}</td>
-                <td className="whitespace-nowrap px-3 py-2 text-slate-600">
-                  {m.profile_id ? (staffName.get(m.profile_id) ?? "-") : "-"}
-                </td>
                 <td className="whitespace-nowrap px-3 py-2">
                   <div className="flex gap-3">
                     <button type="button" onClick={() => setEditing(m)} className="text-xs text-slate-600 hover:underline">
@@ -303,7 +303,7 @@ export function MembersClient({
             ))}
             {members.length === 0 && (
               <tr>
-                <td colSpan={8} className="px-3 py-6 text-center text-slate-400">
+                <td colSpan={7} className="px-3 py-6 text-center text-slate-400">
                   メンバーが登録されていません
                 </td>
               </tr>

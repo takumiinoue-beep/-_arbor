@@ -15,7 +15,7 @@ function revalidateAccounting() {
   revalidatePath("/accounting/pl");
   revalidatePath("/accounting/plan");
   revalidatePath("/accounting/actual");
-  revalidatePath("/accounting/members");
+  revalidatePath("/accounting/team");
   revalidatePath("/accounting/expenses");
   revalidatePath("/accounting/vendor-invoices");
 }
@@ -191,9 +191,19 @@ export async function saveMember(_prev: ActionResult, formData: FormData): Promi
   await requireAdmin();
 
   const id = String(formData.get("id") ?? "").trim();
-  const name = String(formData.get("name") ?? "").trim();
+  let name = String(formData.get("name") ?? "").trim();
   const kind = String(formData.get("kind") ?? "") as MemberKind;
-  const profileId = String(formData.get("profile_id") ?? "").trim();
+  // メンバーは自社情報の担当者から選ぶ。名前は選んだ担当者の名前にそろえる
+  // （自社情報に未登録の既存の登録は、名前をそのまま残して担当者とは紐づけない）
+  const profileChoice = String(formData.get("profile_id") ?? "").trim();
+  let profileId = "";
+  if (profileChoice && profileChoice !== "__keep__") {
+    const lookup = await createClient();
+    const { data: chosen } = await lookup.from("profiles").select("name").eq("id", profileChoice).single();
+    if (!chosen) return { error: "選んだメンバーが自社情報に見つかりません。" };
+    profileId = profileChoice;
+    name = chosen.name as string;
+  }
   const startMonth = monthToDate(String(formData.get("start_month") ?? ""));
   const endMonthRaw = String(formData.get("end_month") ?? "").trim();
   const endMonth = endMonthRaw ? monthToDate(endMonthRaw) : null;
@@ -202,7 +212,7 @@ export async function saveMember(_prev: ActionResult, formData: FormData): Promi
   const social = parseAmount(formData.get("monthly_social_insurance") ?? "0", "月額法定福利費");
   const tiersRaw = String(formData.get("incentive_tiers") ?? "[]");
 
-  if (!name) return { error: "名前を入力してください。" };
+  if (!name) return { error: "メンバーを選択してください。" };
   if (!MEMBER_KIND_VALUES.includes(kind)) return { error: "区分を選択してください。" };
   if (!startMonth) return { error: "開始月を入力してください。" };
   if (endMonthRaw && !endMonth) return { error: "終了月の形式が不正です。" };
