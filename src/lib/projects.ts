@@ -40,3 +40,44 @@ export function createRateResolver(projects: RateProject[], assignments: RateAss
     return assigned.get(`${month}|${staffId}|${name}`) ?? defaultByName.get(name) ?? 100;
   };
 }
+
+export type ExpectedAssignment = {
+  month: string; // "YYYY-MM-DD"
+  staff_id: string;
+  project_id: string;
+  target_quantity: number;
+  effective_rate: number;
+};
+export type ExpectedProject = {
+  id: string;
+  name: string;
+  start_date: string;
+  unit_price: number;
+  price_rates?: { unit_price: number }[] | null;
+};
+
+// 案件設定の見込請求金額（件数×デフォルト単価×有効率）を、OP×月ごとに合計する（行ごとに円で丸める）。
+// 案件設定の画面の「見込請求金額」と同じ計算。戻り値: staff_id -> ("YYYY-MM" -> 金額)
+export function expectedBilledByStaff(
+  assignments: ExpectedAssignment[],
+  projects: ExpectedProject[]
+): Map<string, Map<string, number>> {
+  const nameById = new Map(projects.map((p) => [p.id, p.name]));
+  const priceByName = new Map(
+    Array.from(latestByName(projects), ([name, p]) => [name, defaultUnitPrice(p)] as const)
+  );
+  const result = new Map<string, Map<string, number>>();
+  for (const a of assignments) {
+    const name = nameById.get(a.project_id);
+    if (!name) continue;
+    const amount = Math.round(
+      (Number(a.target_quantity) * (priceByName.get(name) ?? 0) * Number(a.effective_rate)) / 100
+    );
+    if (amount === 0) continue;
+    const month = a.month.slice(0, 7);
+    const months = result.get(a.staff_id) ?? new Map<string, number>();
+    months.set(month, (months.get(month) ?? 0) + amount);
+    result.set(a.staff_id, months);
+  }
+  return result;
+}

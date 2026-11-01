@@ -45,5 +45,6 @@ export async function saveProjectAssignments(
   if (error) return { error: `保存に失敗しました: ${error.message}` };
 
   revalidatePath("/project-settings");
+  revalidatePath("/accounting", "layout");
   return null;
 }

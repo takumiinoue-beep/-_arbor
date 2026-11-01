@@ -155,10 +155,38 @@ export function planSalesByStaff(
   return result;
 }
 
-// 計画の自動値：メンバー人件費・経費・取引先請求の登録内容から作る（売上は含めない）
-export function buildAutoPlan(args: Parameters<typeof buildActualInput>[0]): PlInput {
-  const input = buildActualInput(args);
-  return { ...input, sales: [] };
+// 計画の売上（OP×月）＝ 案件設定の見込請求金額に、計画入力で手入力した金額（0以外）を上書きしたもの。
+// 計画上のインセンティブの自動計算に使う。
+export function planSalesWithExpected(
+  expected: Map<string, Map<string, number>>,
+  entries: PlPlanEntry[],
+  months: string[],
+  staffIdByName: Map<string, string>
+): Map<string, Map<string, number>> {
+  const result = new Map(Array.from(expected, ([staffId, byMonth]) => [staffId, new Map(byMonth)]));
+  for (const [staffId, byMonth] of planSalesByStaff(entries, months, staffIdByName)) {
+    const cur = result.get(staffId) ?? new Map<string, number>();
+    for (const [month, amount] of byMonth) cur.set(month, amount);
+    result.set(staffId, cur);
+  }
+  return result;
+}
+
+// 計画の自動値：メンバー人件費・経費・取引先請求の登録内容と、案件設定の見込請求金額（売上）から作る。
+// salesByStaff はインセンティブの計算に使う売上（手入力の上書き後）、expectedSales は売上の自動値（案件設定の見込請求金額）。
+export function buildAutoPlan(
+  args: Parameters<typeof buildActualInput>[0] & { expectedSales: Map<string, Map<string, number>> }
+): PlInput {
+  const { expectedSales, ...rest } = args;
+  const input = buildActualInput(rest);
+  const sales = buildActualInput({
+    ...rest,
+    members: [],
+    expenses: [],
+    vendorInvoices: [],
+    salesByStaff: expectedSales,
+  }).sales;
+  return { ...input, sales };
 }
 
 // 計画 ＝ 自動値（登録内容）に、計画入力で手入力した金額（0以外）を上書きしたもの。
