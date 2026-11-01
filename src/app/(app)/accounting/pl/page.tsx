@@ -1,5 +1,4 @@
-import { buildAutoPlan, planSalesWithExpected, resolveWithSalesTax } from "@/lib/accounting";
-import { loadExpectedSales } from "@/lib/planSales";
+import { buildAutoPlan, planSalesByStaff, resolveWithSalesTax } from "@/lib/accounting";
 import { FiscalYearNav } from "../FiscalYearNav";
 import { resolveFiscalYear } from "../fy";
 import { loadAccounting } from "../loadAccounting";
@@ -13,12 +12,10 @@ export default async function PlPage({
   const fy = resolveFiscalYear((await searchParams).fy);
   const { months, registered, staffIdByName, planEntries, actualEntries, autoActual } = await loadAccounting(fy);
 
-  // 計画：登録内容（メンバー・経費・取引先請求）と案件設定の見込請求金額（売上）から自動計算し、計画入力の手入力で上書き
-  const expectedSales = await loadExpectedSales(fy);
+  // 計画：登録内容（メンバー・経費・取引先請求）から自動計算し、計画入力の手入力で上書き
   const autoPlan = buildAutoPlan({
     ...registered,
-    salesByStaff: planSalesWithExpected(expectedSales, planEntries, months, staffIdByName),
-    expectedSales,
+    salesByStaff: planSalesByStaff(planEntries, months, staffIdByName),
   });
   const plan = resolveWithSalesTax(planEntries, months, autoPlan).input;
 

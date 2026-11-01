@@ -5,11 +5,10 @@ import {
   fiscalMonths,
   fiscalRange,
   planKey,
-  planSalesWithExpected,
+  planSalesByStaff,
   resolveWithSalesTax,
   SGA_ACCOUNTS,
 } from "@/lib/accounting";
-import { loadExpectedSales } from "@/lib/planSales";
 import type { Expense, Member, PlPlanEntry, PlSection, VendorInvoice } from "@/types/database";
 import { FiscalYearNav } from "../FiscalYearNav";
 import { resolveFiscalYear } from "../fy";
@@ -25,7 +24,7 @@ export default async function PlanPage({
   const { from, toExclusive } = fiscalRange(fy);
   const supabase = await createClient();
 
-  const [{ data: planEntries }, { data: members }, { data: expenses }, { data: vendorInvoices }, { data: staff }, expectedSales] =
+  const [{ data: planEntries }, { data: members }, { data: expenses }, { data: vendorInvoices }, { data: staff }] =
     await Promise.all([
       supabase.from("pl_plan_entries").select("*").gte("plan_month", from).lt("plan_month", toExclusive),
       supabase.from("members").select("*"),
@@ -36,7 +35,6 @@ export default async function PlanPage({
         .gte("invoice_date", from)
         .lt("invoice_date", toExclusive),
       supabase.from("profiles").select("id, name").order("name"),
-      loadExpectedSales(fy),
     ]);
 
   const entries = (planEntries as PlPlanEntry[]) ?? [];
@@ -48,8 +46,7 @@ export default async function PlanPage({
     members: (members as Member[]) ?? [],
     expenses: (expenses as Expense[]) ?? [],
     vendorInvoices: (vendorInvoices as (VendorInvoice & { client: { name: string } | null })[]) ?? [],
-    salesByStaff: planSalesWithExpected(expectedSales, entries, months, staffIdByName),
-    expectedSales,
+    salesByStaff: planSalesByStaff(entries, months, staffIdByName),
     staffNames: new Map((staff ?? []).map((s) => [s.id as string, s.name as string])),
   });
   const { input, autoMap } = resolveWithSalesTax(entries, months, auto);
