@@ -3,7 +3,14 @@
 import { useActionState, useCallback, useEffect, useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import Modal from "@/components/common/Modal";
-import { ACCOUNT_OPTIONS, expensePeriodLabel, formatYen, isExpenseActive } from "@/lib/accounting";
+import {
+  ACCOUNT_OPTIONS,
+  EXPENSE_BASE_OPTIONS,
+  expenseAmountText,
+  expensePeriodLabel,
+  formatYen,
+  isExpenseActive,
+} from "@/lib/accounting";
 import type { Expense } from "@/types/database";
 import { deleteExpense, saveExpense } from "../actions";
 
@@ -37,7 +44,10 @@ function ExpenseForm({
   const [periodType, setPeriodType] = useState<PeriodType>(expense ? periodTypeOf(expense) : "single");
   const [endMonth, setEndMonth] = useState(expense?.end_month ? expense.end_month.slice(0, 7) : "");
   const [account, setAccount] = useState(expense?.account ?? "");
+  const [amountMode, setAmountMode] = useState<"fixed" | "percent">(expense?.percent_base ? "percent" : "fixed");
   const [amount, setAmount] = useState(expense ? String(expense.amount) : "");
+  const [percentBase, setPercentBase] = useState(expense?.percent_base ?? "sales");
+  const [percentRate, setPercentRate] = useState(expense?.percent_rate != null ? String(Number(expense.percent_rate)) : "");
   const [description, setDescription] = useState(expense?.description ?? "");
 
   useEffect(() => {
@@ -99,18 +109,68 @@ function ExpenseForm({
           </select>
         </div>
         <div className="flex flex-col gap-1">
-          <label className={label}>{periodType === "single" ? "金額（円）" : "月額（円）"}</label>
-          <input
-            name="amount"
-            type="number"
-            min={0}
-            step={1}
-            required
-            value={amount}
-            onChange={(e) => setAmount(e.target.value)}
-            className={`${field} ${layout === "inline" ? "w-36" : ""}`}
-          />
+          <label className={label}>金額の決め方</label>
+          <select
+            name="amount_mode"
+            value={amountMode}
+            onChange={(e) => setAmountMode(e.target.value as "fixed" | "percent")}
+            className={field}
+          >
+            <option value="fixed">金額を入力</option>
+            <option value="percent">項目の○%で計算</option>
+          </select>
         </div>
+        {amountMode === "fixed" ? (
+          <div className="flex flex-col gap-1">
+            <label className={label}>{periodType === "single" ? "金額（円）" : "月額（円）"}</label>
+            <input
+              name="amount"
+              type="number"
+              min={0}
+              step={1}
+              required
+              value={amount}
+              onChange={(e) => setAmount(e.target.value)}
+              className={`${field} ${layout === "inline" ? "w-36" : ""}`}
+            />
+          </div>
+        ) : (
+          <>
+            <div className="flex flex-col gap-1">
+              <label className={label}>もとにする項目</label>
+              <select
+                name="percent_base"
+                required
+                value={percentBase}
+                onChange={(e) => setPercentBase(e.target.value)}
+                className={field}
+              >
+                {EXPENSE_BASE_OPTIONS.map((o) => (
+                  <option key={o.value} value={o.value}>
+                    {o.label}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div className="flex flex-col gap-1">
+              <label className={label}>割合（%）</label>
+              <input
+                name="percent_rate"
+                type="number"
+                min={0}
+                step="any"
+                required
+                value={percentRate}
+                onChange={(e) => setPercentRate(e.target.value)}
+                className={`${field} ${layout === "inline" ? "w-24" : ""}`}
+              />
+            </div>
+            <p className={`text-xs text-slate-400 ${layout === "inline" ? "w-full" : "col-span-2"}`}>
+              PLの各月で「もとにする項目の金額 × 割合」を自動で計算して計上します（計画・結果とも。売上は、計画では計画入力の売上です）。
+              金額を入力した経費や人件費などが、もとになります。割合の経費どうしは、もとにできません。
+            </p>
+          </>
+        )}
         <div className={`flex flex-col gap-1 ${layout === "stacked" ? "col-span-2" : ""}`}>
           <label className={label}>内容</label>
           <input
@@ -166,7 +226,7 @@ export function ExpensesClient({
   const router = useRouter();
 
   function handleDelete(e: Expense) {
-    if (!confirm(`${expensePeriodLabel(e)}「${e.account}」${formatYen(Number(e.amount))}を削除しますか？`)) return;
+    if (!confirm(`${expensePeriodLabel(e)}「${e.account}」${expenseAmountText(e)}を削除しますか？`)) return;
     startTransition(async () => {
       const result = await deleteExpense(e.id);
       if (result?.error) alert(`削除できませんでした: ${result.error}`);
@@ -176,7 +236,9 @@ export function ExpensesClient({
 
   // 事業年度内で計上される月数と合計
   const monthsInYear = (e: Expense) => months.filter((m) => isExpenseActive(e, m)).length;
-  const total = expenses.reduce((sum, e) => sum + Number(e.amount) * monthsInYear(e), 0);
+  // 割合で計算する経費は、月ごとに金額が変わるので、合計には含めない
+  const total = expenses.reduce((sum, e) => sum + (e.percent_base ? 0 : Number(e.amount) * monthsInYear(e)), 0);
+  const hasPercent = expenses.some((e) => e.percent_base);
 
   return (
     <div className="flex flex-col gap-4">
@@ -205,9 +267,9 @@ export function ExpensesClient({
                 <tr key={e.id} className="hover:bg-slate-50">
                   <td className="whitespace-nowrap px-3 py-2 text-slate-600">{expensePeriodLabel(e)}</td>
                   <td className="whitespace-nowrap px-3 py-2 font-medium text-slate-800">{e.account}</td>
-                  <td className="whitespace-nowrap px-3 py-2 text-right text-slate-700">{formatYen(Number(e.amount))}</td>
+                  <td className="whitespace-nowrap px-3 py-2 text-right text-slate-700">{expenseAmountText(e)}</td>
                   <td className="whitespace-nowrap px-3 py-2 text-right text-slate-700">
-                    {formatYen(Number(e.amount) * n)}
+                    {e.percent_base ? "月ごとに自動計算" : formatYen(Number(e.amount) * n)}
                     <span className="ml-1 text-xs text-slate-400">（{n}か月）</span>
                   </td>
                   <td className="px-3 py-2 text-slate-500">{e.description ?? ""}</td>
@@ -243,7 +305,10 @@ export function ExpensesClient({
                 <td className="px-3 py-2" colSpan={3}>
                   この年度の合計（{expenses.length}件）
                 </td>
-                <td className="px-3 py-2 text-right">{formatYen(total)}</td>
+                <td className="px-3 py-2 text-right">
+                  {formatYen(total)}
+                  {hasPercent && <span className="ml-1 text-xs font-normal text-slate-400">（割合の経費を除く）</span>}
+                </td>
                 <td colSpan={2} />
               </tr>
             </tfoot>

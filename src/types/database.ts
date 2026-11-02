@@ -106,6 +106,8 @@ export type Expense = {
   ongoing: boolean;
   account: string;
   amount: number;
+  percent_base: string | null; // 割合で計算するときの、もとにする項目（空なら金額を直接入力）
+  percent_rate: number | null; // その項目に対する割合（%）
   description: string | null;
   created_by: string | null;
   created_at: string;

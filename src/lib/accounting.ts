@@ -36,6 +36,24 @@ export const COGS_OUTSOURCE_ACCOUNT = "原価（外注費）";
 export const INCENTIVE_ACCOUNT = "インセンティブ";
 export const ACCOUNT_OPTIONS: string[] = [...SGA_ACCOUNTS, COGS_OUTSOURCE_ACCOUNT, INCENTIVE_ACCOUNT];
 
+// 経費を「ある項目の○%」で計算するときに選べる、もとの項目。
+// 割合で登録した経費どうしは、もとにできない（その月の、金額を直接入力した分だけから計算する）
+export const EXPENSE_BASE_OPTIONS: { value: string; label: string }[] = [
+  { value: "sales", label: "売上" },
+  { value: "cogs", label: "原価（労務費・外注費・インセンティブ）" },
+  ...SGA_ACCOUNTS.map((a) => ({ value: `sga:${a}`, label: `販管費：${a}` })),
+];
+
+export function expenseBaseLabel(value: string | null): string {
+  return EXPENSE_BASE_OPTIONS.find((o) => o.value === value)?.label ?? value ?? "";
+}
+
+// 経費の金額欄に出す文字（割合のときは「売上の3%」）
+export function expenseAmountText(e: Pick<Expense, "amount" | "percent_base" | "percent_rate">): string {
+  if (e.percent_base) return `${expenseBaseLabel(e.percent_base)}の${Number(e.percent_rate)}%`;
+  return formatYen(Number(e.amount));
+}
+
 // 原価（外注費）側の行名にする科目か
 const isOutsourceAccount = (account: string) => account === COGS_OUTSOURCE_ACCOUNT || account === INCENTIVE_ACCOUNT;
 
@@ -110,6 +128,18 @@ export function emptyPlInput(): PlInput {
 class LineBook {
   private map = new Map<string, number[]>();
   private details = new Map<string, PlDetail[][]>();
+
+  // その月の、その行の金額
+  value(label: string, monthIndex: number): number {
+    return this.map.get(label)?.[monthIndex] ?? 0;
+  }
+
+  // その月の、全行の合計
+  total(monthIndex: number): number {
+    let sum = 0;
+    for (const values of this.map.values()) sum += values[monthIndex] ?? 0;
+    return sum;
+  }
 
   add(label: string, monthIndex: number, amount: number, detail?: string) {
     if (monthIndex < 0 || !amount) return;
@@ -356,8 +386,9 @@ export function buildActualInput(args: {
     });
   }
 
-  // 経費（期間指定・継続の経費は、該当する各月に同額を計上）
+  // 経費（期間指定・継続の経費は、該当する各月に同額を計上）。割合で登録した経費は、取引先請求のあとで計算する
   for (const e of expenses) {
+    if (e.percent_base) continue;
     months.forEach((month, idx) => {
       if (!isExpenseActive(e, month)) return;
       const text = `経費：${e.description || "（内容なし）"}${
@@ -384,6 +415,37 @@ export function buildActualInput(args: {
     } else {
       sga.add(v.account, idx, Number(v.subtotal), text);
     }
+  }
+
+  // 割合で登録した経費：その月の「もとの項目」の金額 × 割合（金額を直接入力した分だけをもとにする）
+  const baseAmount = (base: string, idx: number): number => {
+    if (base === "sales") return sales.total(idx);
+    if (base === "cogs") return labor.total(idx) + outsource.total(idx);
+    if (base.startsWith("sga:")) return sga.value(base.slice(4), idx);
+    return 0;
+  };
+  // もとの金額は、割合の経費を足す前に、使われる項目すべてについて先に求めておく（割合の経費どうしを、もとにしないため）
+  const snapshot = new Map<string, number[]>();
+  for (const e of expenses) {
+    if (e.percent_base && !snapshot.has(e.percent_base)) {
+      const base = e.percent_base;
+      snapshot.set(base, months.map((_, idx) => baseAmount(base, idx)));
+    }
+  }
+  for (const e of expenses) {
+    if (!e.percent_base) continue;
+    const rate = Number(e.percent_rate ?? 0);
+    const bases = snapshot.get(e.percent_base) ?? [];
+    months.forEach((month, idx) => {
+      if (!isExpenseActive(e, month)) return;
+      const amount = Math.round(((bases[idx] ?? 0) * rate) / 100);
+      const text = `経費：${e.description || "（内容なし）"}（${expenseBaseLabel(e.percent_base)}${formatShortYen(bases[idx] ?? 0)}の${rate}%）`;
+      if (isOutsourceAccount(e.account)) {
+        outsource.add(e.account === INCENTIVE_ACCOUNT ? INCENTIVE_ACCOUNT : "外注（経費）", idx, amount, text);
+      } else {
+        sga.add(e.account, idx, amount, text);
+      }
+    });
   }
 
   const sortByLabel = (lines: PlLine[]) => lines.sort((a, b) => a.label.localeCompare(b.label, "ja"));

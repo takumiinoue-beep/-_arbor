@@ -3,7 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
 import { requireAdmin } from "@/lib/auth";
-import { ACCOUNT_OPTIONS, fiscalMonths, fiscalRange } from "@/lib/accounting";
+import { ACCOUNT_OPTIONS, EXPENSE_BASE_OPTIONS, fiscalMonths, fiscalRange } from "@/lib/accounting";
 import type { MemberKind, PlSection } from "@/types/database";
 
 export type ActionResult = { error: string } | null;
@@ -49,7 +49,18 @@ export async function saveExpense(_prev: ActionResult, formData: FormData): Prom
   const endMonth = periodType === "range" ? monthToDate(endMonthRaw) : null;
   const account = String(formData.get("account") ?? "");
   const description = String(formData.get("description") ?? "").trim();
-  const amount = parseAmount(formData.get("amount"), "金額");
+  // 金額の決め方：直接入力、または「ある項目の○%」
+  const amountMode = String(formData.get("amount_mode") ?? "fixed");
+  const percentBase = amountMode === "percent" ? String(formData.get("percent_base") ?? "") : "";
+  const percentRate = amountMode === "percent" ? Number(String(formData.get("percent_rate") ?? "").trim()) : null;
+  const amount = amountMode === "percent" ? { ok: true as const, value: 0 } : parseAmount(formData.get("amount"), "金額");
+
+  if (amountMode === "percent") {
+    if (!EXPENSE_BASE_OPTIONS.some((o) => o.value === percentBase)) return { error: "もとにする項目を選択してください。" };
+    if (percentRate === null || !Number.isFinite(percentRate) || percentRate <= 0 || percentRate > 1000) {
+      return { error: "割合は0より大きく1000以下の数字（%）で入力してください。" };
+    }
+  }
 
   if (!month) return { error: "開始月（対象月）を入力してください。" };
   if (!["single", "range", "ongoing"].includes(periodType)) return { error: "期間の種類が不正です。" };
@@ -66,6 +77,8 @@ export async function saveExpense(_prev: ActionResult, formData: FormData): Prom
     ongoing: periodType === "ongoing",
     account,
     amount: amount.value,
+    percent_base: percentBase || null,
+    percent_rate: percentRate,
     description: description || null,
   };
 
@@ -73,7 +86,14 @@ export async function saveExpense(_prev: ActionResult, formData: FormData): Prom
   const { error } = id
     ? await supabase.from("expenses").update(value).eq("id", id)
     : await supabase.from("expenses").insert({ ...value, created_by: profile.id });
-  if (error) return { error: `${id ? "更新" : "登録"}に失敗しました: ${error.message}` };
+  if (error) {
+    return {
+      error:
+        amountMode === "percent" && error.message.includes("percent_")
+          ? "保存できませんでした。マイグレーション 0033 を実行してください。"
+          : `${id ? "更新" : "登録"}に失敗しました: ${error.message}`,
+    };
+  }
 
   revalidateAccounting();
   return null;
