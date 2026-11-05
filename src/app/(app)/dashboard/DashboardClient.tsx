@@ -340,6 +340,7 @@ type TotalRow = {
   projectName: string;
   unitPrice: number;
   acquiredQty: number;
+  acquiredAmount: number;
   confirmedQty: number;
 };
 
@@ -733,9 +734,11 @@ export function DashboardClient({
         projectName,
         unitPrice: Number(a.unit_price),
         acquiredQty: 0,
+        acquiredAmount: 0,
         confirmedQty: round2(confirmedBy.get(key) ?? 0),
       };
       cur.acquiredQty += a.quantity;
+      cur.acquiredAmount += Number(a.amount);
       map.set(key, cur);
     }
     return Array.from(map.values()).sort(
@@ -899,6 +902,7 @@ export function DashboardClient({
                   <th className="px-3 py-2 text-left font-medium text-slate-500">案件名</th>
                   <th className="px-3 py-2 text-right font-medium text-slate-500">単価</th>
                   <th className="px-3 py-2 text-right font-medium text-slate-500">獲得件数</th>
+                  <th className="px-3 py-2 text-right font-medium text-slate-500">獲得金額</th>
                   <th className="px-3 py-2 text-right font-medium text-slate-500">有効件数</th>
                   <th className="px-3 py-2 text-right font-medium text-slate-500">確定金額</th>
                 </tr>
@@ -910,6 +914,7 @@ export function DashboardClient({
                     <td className="px-3 py-1.5 text-slate-700">{row.projectName}</td>
                     <td className="px-3 py-1.5 text-right text-slate-700">{formatCurrency(row.unitPrice)}</td>
                     <td className="px-3 py-1.5 text-right text-slate-700">{qtyText(row.acquiredQty)}</td>
+                    <td className="px-3 py-1.5 text-right text-slate-700">{formatCurrency(row.acquiredAmount)}</td>
                     <td className="px-3 py-1.5 text-right text-slate-700">{qtyText(row.confirmedQty)}</td>
                     <td className="px-3 py-1.5 text-right font-medium text-slate-900">
                       {formatCurrency(Math.round(row.confirmedQty * row.unitPrice))}
@@ -923,6 +928,7 @@ export function DashboardClient({
                     合計
                   </td>
                   <td className="px-3 py-2 text-right">{qtyText(sum(totalRows, (r) => r.acquiredQty))}</td>
+                  <td className="px-3 py-2 text-right">{formatCurrency(sum(totalRows, (r) => r.acquiredAmount))}</td>
                   <td className="px-3 py-2 text-right">{qtyText(sum(totalRows, (r) => r.confirmedQty))}</td>
                   <td className="px-3 py-2 text-right">
                     {formatCurrency(Math.round(sum(totalRows, (r) => r.confirmedQty * r.unitPrice)))}
