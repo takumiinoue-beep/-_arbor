@@ -9,6 +9,7 @@ import { acquisitionMonth, confirmedLines, type ConfirmedData, type ConfirmedLin
 import { AcquisitionButton, type AcquisitionProject } from "./AcquisitionButton";
 import Modal from "@/components/common/Modal";
 import { DeleteAcquisitionButton } from "./DeleteAcquisitionButton";
+import { RepriceModal } from "./RepriceModal";
 import { setConfirmedQuantities, updateAcquisition } from "./actions";
 
 export type AcquisitionRow = Pick<
@@ -668,6 +669,7 @@ export function DashboardClient({
   const [dailyExpanded, setDailyExpanded] = useState<Set<string>>(new Set());
   const [editing, setEditing] = useState<SalesEntry | null>(null);
   const [confirming, setConfirming] = useState(false);
+  const [repricing, setRepricing] = useState(false);
 
   function toggle(setter: typeof setExpanded, key: string) {
     setter((prev) => {
@@ -813,6 +815,13 @@ export function DashboardClient({
   return (
     <div className="flex flex-col gap-6">
       <EditAcquisitionModal entry={editing} onClose={() => setEditing(null)} />
+      {repricing && (
+        <RepriceModal
+          currentMonth={monthTab === "all" ? currentMonthKey : monthTab}
+          monthText={monthText}
+          onClose={() => setRepricing(false)}
+        />
+      )}
       {confirming && (
         <EnterConfirmedModal
           acquisitions={acquisitions}
@@ -873,6 +882,15 @@ export function DashboardClient({
           ))}
         </div>
         <div className="flex items-center gap-2">
+          {isAdmin && (
+            <button
+              type="button"
+              onClick={() => setRepricing(true)}
+              className="rounded-md border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-100"
+            >
+              単価を反映
+            </button>
+          )}
           {isAdmin && (
             <button
               type="button"

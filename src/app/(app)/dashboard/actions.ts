@@ -3,6 +3,8 @@
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
 import { requireAdmin, requireProfile } from "@/lib/auth";
+import { fetchAllRows } from "@/lib/supabase/fetchAll";
+import { planMoves, planRepricing, type RepriceAcquisition, type RepriceProject } from "@/lib/reprice";
 
 type FormState = { error: string } | null;
 
@@ -197,4 +199,91 @@ export async function deleteAcquisition(id: string) {
 
   revalidatePath("/dashboard");
   revalidatePath("/project-settings");
+}
+
+// ---------- 案件一覧の単価を、登録済みの案件獲得に反映する ----------
+
+export type RepriceSummaryRow = {
+  month: string; // "YYYY-MM"
+  projectName: string;
+  count: number; // 変わる獲得の登録数
+  quantity: number;
+  oldAmount: number;
+  newAmount: number;
+};
+
+async function loadRepriceData() {
+  const supabase = await createClient();
+  const [acquisitions, { data: projects }] = await Promise.all([
+    fetchAllRows<RepriceAcquisition>((from, to) =>
+      supabase
+        .from("acquisitions")
+        .select("id, acquired_date, target_month, project_id, staff_id, quantity, unit_price, position, employee_count")
+        .order("acquired_date")
+        .order("id")
+        .range(from, to)
+        .overrideTypes<RepriceAcquisition[], { merge: false }>()
+    ),
+    supabase.from("projects").select("id, name, start_date, unit_price, price_rates(position, employee_min, employee_max, unit_price)"),
+  ]);
+  return { acquisitions, projects: (projects as unknown as RepriceProject[]) ?? [] };
+}
+
+// 反映した場合に何がどう変わるかを、月 × 案件ごとに返す（何も変更しない）
+export async function previewRepricing(): Promise<{ rows: RepriceSummaryRow[] } | { error: string }> {
+  await requireAdmin();
+  try {
+    const { acquisitions, projects } = await loadRepriceData();
+    const map = new Map<string, RepriceSummaryRow>();
+    for (const c of planRepricing(acquisitions, projects)) {
+      const key = `${c.month}|${c.projectName}`;
+      const cur = map.get(key) ?? { month: c.month, projectName: c.projectName, count: 0, quantity: 0, oldAmount: 0, newAmount: 0 };
+      cur.count += 1;
+      cur.quantity += c.quantity;
+      cur.oldAmount += c.oldPrice * c.quantity;
+      cur.newAmount += c.newPrice * c.quantity;
+      map.set(key, cur);
+    }
+    const rows = Array.from(map.values()).sort(
+      (a, b) => a.month.localeCompare(b.month) || a.projectName.localeCompare(b.projectName, "ja")
+    );
+    return { rows };
+  } catch (e) {
+    return { error: e instanceof Error ? e.message : "確認できませんでした。" };
+  }
+}
+
+// 選んだ計上月の案件獲得の単価を、案件一覧のいまの単価に直す（管理者のみ）。
+// 金額は 単価×件数 で計算し直し、入力済みの有効件数は新しい単価の行に付け替える。
+export async function applyRepricing(months: string[]): Promise<{ error: string } | { updated: number }> {
+  await requireAdmin();
+  if (months.length === 0 || months.some((m) => !/^\d{4}-\d{2}$/.test(m))) return { error: "反映する月を選んでください。" };
+
+  try {
+    const { acquisitions, projects } = await loadRepriceData();
+    const target = new Set(months);
+    const changes = planRepricing(acquisitions, projects).filter((c) => target.has(c.month));
+    if (changes.length === 0) return { updated: 0 };
+
+    const supabase = await createClient();
+    const { data, error } = await supabase.rpc("reprice_acquisitions", {
+      p_updates: changes.map((c) => ({ id: c.id, unit_price: c.newPrice })),
+      p_moves: planMoves(changes, acquisitions, projects),
+    });
+    if (error) {
+      return {
+        error: error.message.includes("reprice_acquisitions")
+          ? "反映できませんでした。マイグレーション 0034 を実行してください。"
+          : `反映できませんでした: ${error.message}`,
+      };
+    }
+
+    revalidatePath("/dashboard");
+    revalidatePath("/project-settings");
+    revalidatePath("/accounting", "layout");
+    revalidatePath("/invoices/issue");
+    return { updated: typeof data === "number" ? data : changes.length };
+  } catch (e) {
+    return { error: e instanceof Error ? e.message : "反映できませんでした。" };
+  }
 }
