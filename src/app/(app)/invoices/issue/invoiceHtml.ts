@@ -49,12 +49,15 @@ export function buildInvoiceHTML(
 <meta charset="UTF-8">
 <title>${pageTitle}</title>
 <style>
+  /* 用紙の余白を0にして、ブラウザが印刷時に上下へ入れる日付・書類名・URL・ページ番号を出さない。
+     余白は body の padding で取る（これまでの余白＝用紙の余白10mm＋padding） */
+  @page { size: A4; margin: 0; }
   * { box-sizing: border-box; margin: 0; padding: 0; }
   body {
     font-family: 'Hiragino Sans', 'Yu Gothic UI', 'Meiryo', sans-serif;
     font-size: 11px;
     color: #000;
-    padding: 28px 32px;
+    padding: calc(10mm + 28px) calc(10mm + 32px);
   }
   .title {
     text-align: center;
