@@ -1,8 +1,11 @@
+import { priceInclusive } from "@/lib/tax";
+
 export type SalesAcquisition = {
   acquired_date: string;
   target_month?: string | null;
   quantity: number;
-  unit_price: number;
+  unit_price: number; // 税抜
+  unit_price_incl?: number | null; // 税込。空のときは 税抜×1.1
   staff_id: string;
   project_id: string;
 };
@@ -28,9 +31,11 @@ export type ConfirmedLine = {
   month: string; // "YYYY-MM"
   staffId: string;
   projectName: string;
-  unitPrice: number;
+  unitPrice: number; // 税抜
+  unitPriceIncl: number; // 税込
   quantity: number; // そのOPの有効件数
-  amount: number;
+  amount: number; // 税抜の確定金額（有効件数×税抜の単価）。請求書に使う
+  amountIncl: number; // 税込の確定金額（有効件数×税込の単価）。売上に使う
 };
 
 // 入力した有効件数を、OPごとの行にする。
@@ -43,8 +48,9 @@ export function confirmedLines(args: {
 }): ConfirmedLine[] {
   const { acquisitions, nameById, confirmed } = args;
 
-  // 月|案件名|単価 -> OPごとの獲得件数
+  // 月|案件名|単価 -> OPごとの獲得件数。税込の単価は、OPごとに、件数が一番多いものを使う
   const groups = new Map<string, Map<string, number>>();
+  const inclQty = new Map<string, Map<number, number>>();
   for (const a of acquisitions) {
     const name = nameById.get(a.project_id);
     if (!name) continue;
@@ -52,7 +58,16 @@ export function confirmedLines(args: {
     const byStaff = groups.get(key) ?? new Map<string, number>();
     byStaff.set(a.staff_id, (byStaff.get(a.staff_id) ?? 0) + a.quantity);
     groups.set(key, byStaff);
+    const incl = priceInclusive(a.unit_price, a.unit_price_incl);
+    const inclKey = `${key}|${a.staff_id}`;
+    const byIncl = inclQty.get(inclKey) ?? new Map<number, number>();
+    byIncl.set(incl, (byIncl.get(incl) ?? 0) + a.quantity);
+    inclQty.set(inclKey, byIncl);
   }
+  const inclOf = (key: string, staffId: string, unitPrice: number): number => {
+    const best = Array.from(inclQty.get(`${key}|${staffId}`) ?? []).sort((x, y) => y[1] - x[1])[0];
+    return best ? best[0] : priceInclusive(unitPrice);
+  };
 
   const totalBy = new Map(
     confirmed.totals.map((c) => [`${c.month.slice(0, 7)}|${c.project_name}|${Number(c.unit_price)}`, Number(c.quantity)])
@@ -75,19 +90,29 @@ export function confirmedLines(args: {
       const quantity =
         own !== undefined ? own : total !== undefined && acquiredTotal > 0 ? (total * acquiredQty) / acquiredTotal : 0;
       if (quantity === 0) continue;
-      lines.push({ month, staffId, projectName, unitPrice, quantity, amount: quantity * unitPrice });
+      const unitPriceIncl = inclOf(key, staffId, unitPrice);
+      lines.push({
+        month,
+        staffId,
+        projectName,
+        unitPrice,
+        unitPriceIncl,
+        quantity,
+        amount: quantity * unitPrice,
+        amountIncl: quantity * unitPriceIncl,
+      });
     }
   }
   return lines;
 }
 
-// 売上（請求金額）をOP×月ごとに集計する。確定金額（有効件数×単価）を、その月に載せる。
+// 売上をOP×月ごとに集計する。税込の確定金額（有効件数×税込の単価）を、その月に載せる。
 // 戻り値: staff_id -> ("YYYY-MM" -> 金額)
 export function monthlyBilledByStaff(lines: ConfirmedLine[]): Map<string, Map<string, number>> {
   const result = new Map<string, Map<string, number>>();
   for (const l of lines) {
     const months = result.get(l.staffId) ?? new Map<string, number>();
-    months.set(l.month, (months.get(l.month) ?? 0) + l.amount);
+    months.set(l.month, (months.get(l.month) ?? 0) + l.amountIncl);
     result.set(l.staffId, months);
   }
   for (const months of result.values()) {

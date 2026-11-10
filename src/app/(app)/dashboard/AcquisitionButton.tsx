@@ -6,15 +6,16 @@ import Modal from "@/components/common/Modal";
 import type { PriceRate, Profile, Project } from "@/types/database";
 import { formatCurrency } from "@/lib/format";
 import { formatYearMonth } from "@/lib/period";
-import { defaultUnitPrice, latestByName } from "@/lib/projects";
+import { defaultUnitPrice, defaultUnitPriceIncl, latestByName } from "@/lib/projects";
+import { priceInclusive } from "@/lib/tax";
 import { createAcquisition } from "./actions";
 
 function toToday(): string {
   return new Date().toISOString().slice(0, 10);
 }
 
-export type AcquisitionProject = Pick<Project, "id" | "name" | "start_date" | "status" | "unit_price" | "effective_rate"> & {
-  price_rates?: Pick<PriceRate, "id" | "position" | "employee_min" | "employee_max" | "unit_price">[];
+export type AcquisitionProject = Pick<Project, "id" | "name" | "start_date" | "status" | "unit_price" | "unit_price_incl" | "effective_rate"> & {
+  price_rates?: Pick<PriceRate, "id" | "position" | "employee_min" | "employee_max" | "unit_price" | "unit_price_incl">[];
 };
 
 type Row = {
@@ -160,9 +161,18 @@ export function AcquisitionButton({
     // 料金表に当てはまる行があればその単価、無ければデフォルトの単価
     const fallbackPrice = project ? defaultUnitPrice(project) : 0;
     const unitPrice = matchedRate ? Number(matchedRate.unit_price) : fallbackPrice > 0 ? fallbackPrice : null;
+    // 税込の単価（売上・獲得金額に使う）
+    const unitPriceIncl =
+      unitPrice === null
+        ? null
+        : matchedRate
+          ? priceInclusive(Number(matchedRate.unit_price), matchedRate.unit_price_incl)
+          : project
+            ? defaultUnitPriceIncl(project)
+            : priceInclusive(unitPrice);
     const quantityNum = Number(row.quantity) || 0;
     const quantityValid = Number.isInteger(quantityNum) && quantityNum >= 1;
-    return { month, project, hasRates, positionOptions, matchedRate, unitPrice, quantityNum, quantityValid };
+    return { month, project, hasRates, positionOptions, matchedRate, unitPrice, unitPriceIncl, quantityNum, quantityValid };
   }
 
   const resolvedBlocks = blocks.map((b) => ({ block: b, rows: b.rows.map(resolveRow) }));
@@ -174,7 +184,8 @@ export function AcquisitionButton({
   );
   const totalAmount = resolvedBlocks.reduce(
     (sum, { rows }) =>
-      sum + rows.reduce((s, r) => s + (r.unitPrice !== null && r.quantityValid ? r.unitPrice * r.quantityNum : 0), 0),
+      sum +
+      rows.reduce((s, r) => s + (r.unitPriceIncl !== null && r.quantityValid ? r.unitPriceIncl * r.quantityNum : 0), 0),
     0
   );
 
@@ -189,6 +200,7 @@ export function AcquisitionButton({
         position: resolved.hasRates ? row.position : "",
         employee_count: resolved.hasRates ? row.employeeCount : "",
         unit_price: resolved.unitPrice ?? "",
+        unit_price_incl: resolved.unitPriceIncl ?? "",
         quantity: row.quantity,
       };
     })
@@ -345,6 +357,9 @@ export function AcquisitionButton({
                       <span className="font-semibold text-slate-700">
                         {resolved.unitPrice !== null ? formatCurrency(resolved.unitPrice) : "未確定"}
                       </span>
+                      {resolved.unitPrice !== null && resolved.unitPriceIncl !== null && (
+                        <span className="ml-1">（税抜）／税込 {formatCurrency(resolved.unitPriceIncl)}</span>
+                      )}
                       {resolved.unitPrice !== null && resolved.hasRates && (
                         <span className="ml-1">
                           {resolved.matchedRate ? "（料金表）" : "（デフォルト単価。役職・従業員数が料金表に当てはまりません）"}
@@ -383,7 +398,7 @@ export function AcquisitionButton({
           </button>
 
           <div className="rounded-md bg-slate-50 px-3 py-2 text-sm text-slate-600">
-            合計金額：
+            合計金額（税込）：
             <span className="ml-1 font-semibold text-slate-900">{formatCurrency(totalAmount)}</span>
             <span className="ml-1 text-xs text-slate-400">
               ※ 登録した件数は、案件設定の現在件数に反映されます。

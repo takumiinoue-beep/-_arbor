@@ -17,7 +17,8 @@ export type Project = {
   staff_id: string | null;
   start_date: string;
   end_date: string | null;
-  unit_price: number;
+  unit_price: number; // デフォルトの単価（税抜）
+  unit_price_incl: number | null; // デフォルトの単価（税込）。空のときは 税抜×1.1
   effective_rate: number;
   client_id: number | null; // どこからの案件か（取引先）。任意
   quantity: number;
@@ -54,7 +55,8 @@ export type PriceRate = {
   position: string;
   employee_min: number;
   employee_max: number | null;
-  unit_price: number;
+  unit_price: number; // 税抜
+  unit_price_incl: number | null; // 税込。空のときは 税抜×1.1
   quantity: number;
   actual_quantity: number;
   confirmed_quantity: number;
@@ -70,9 +72,10 @@ export type Acquisition = {
   rate_id: string | null;
   position: string | null;
   employee_count: number | null;
-  unit_price: number;
+  unit_price: number; // 税抜
+  unit_price_incl: number | null; // 税込。空のときは 税抜×1.1
   quantity: number;
-  amount: number;
+  amount: number; // 税抜の金額（単価×件数）
   staff_id: string;
   created_by: string | null;
   created_at: string;

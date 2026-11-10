@@ -1,5 +1,6 @@
 import { acquisitionMonth } from "@/lib/sales";
-import { defaultUnitPrice, latestByName } from "@/lib/projects";
+import { defaultUnitPrice, defaultUnitPriceIncl, latestByName } from "@/lib/projects";
+import { priceInclusive } from "@/lib/tax";
 
 export type RepriceAcquisition = {
   id: string;
@@ -9,6 +10,7 @@ export type RepriceAcquisition = {
   staff_id: string;
   quantity: number;
   unit_price: number;
+  unit_price_incl: number | null;
   position: string | null;
   employee_count: number | null;
 };
@@ -18,7 +20,16 @@ export type RepriceProject = {
   name: string;
   start_date: string;
   unit_price: number;
-  price_rates?: { position: string; employee_min: number; employee_max: number | null; unit_price: number }[] | null;
+  unit_price_incl?: number | null;
+  price_rates?:
+    | {
+        position: string;
+        employee_min: number;
+        employee_max: number | null;
+        unit_price: number;
+        unit_price_incl?: number | null;
+      }[]
+    | null;
 };
 
 export type RepriceChange = {
@@ -27,8 +38,10 @@ export type RepriceChange = {
   staffId: string;
   projectName: string;
   quantity: number;
-  oldPrice: number;
+  oldPrice: number; // 税抜
   newPrice: number;
+  oldPriceIncl: number; // 税込
+  newPriceIncl: number;
 };
 
 // 登録済みの案件獲得について、案件一覧の「いまの」単価に直した場合の変更を求める。
@@ -52,8 +65,10 @@ export function planRepricing(acquisitions: RepriceAcquisition[], projects: Repr
           )
         : undefined;
     const newPrice = rate ? Number(rate.unit_price) : defaultUnitPrice(project);
+    const newPriceIncl = rate ? priceInclusive(Number(rate.unit_price), rate.unit_price_incl) : defaultUnitPriceIncl(project);
     const oldPrice = Number(a.unit_price);
-    if (!(newPrice > 0) || newPrice === oldPrice) continue;
+    const oldPriceIncl = priceInclusive(oldPrice, a.unit_price_incl);
+    if (!(newPrice > 0) || (newPrice === oldPrice && newPriceIncl === oldPriceIncl)) continue;
 
     changes.push({
       id: a.id,
@@ -63,6 +78,8 @@ export function planRepricing(acquisitions: RepriceAcquisition[], projects: Repr
       quantity: a.quantity,
       oldPrice,
       newPrice,
+      oldPriceIncl,
+      newPriceIncl,
     });
   }
   return changes;
@@ -87,6 +104,7 @@ export function planMoves(changes: RepriceChange[], acquisitions: RepriceAcquisi
     { month: string; staffId: string; projectName: string; oldPrice: number; count: number; byNew: Map<number, number> }
   >();
   for (const c of changes) {
+    if (c.newPrice === c.oldPrice) continue; // 税抜の単価が同じなら、有効件数の行はそのまま
     const key = `${c.month}|${c.staffId}|${c.projectName}|${c.oldPrice}`;
     const g = groups.get(key) ?? {
       month: c.month,

@@ -62,7 +62,7 @@ export default async function InvoiceIssuePage() {
     .map((g) => ({
       id: g.id,
       description: g.name,
-      label: `${Number(g.month.slice(5, 7))}月 ${g.name}（有効 ${g.qty}件 × ¥${g.unitPrice.toLocaleString("ja-JP")}）`,
+      label: `${Number(g.month.slice(5, 7))}月 ${g.name}（有効 ${g.qty}件 × ¥${g.unitPrice.toLocaleString("ja-JP")}・税抜）`,
       unit_price: g.unitPrice,
       client_id: clientIdByName.get(g.name) ?? null,
       confirmed_quantity: g.qty,

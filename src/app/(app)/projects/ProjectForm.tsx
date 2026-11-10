@@ -3,6 +3,7 @@
 import { useActionState, useState } from "react";
 import Link from "next/link";
 import type { Client, PriceRate, Project } from "@/types/database";
+import { priceInclusive, toTaxIncluded } from "@/lib/tax";
 
 type Action = (
   prevState: { error: string } | null,
@@ -14,10 +15,22 @@ type PriceRateRow = {
   position: string;
   employee_min: string;
   employee_max: string;
-  unit_price: string;
+  unit_price: string; // 税抜
+  unit_price_incl: string; // 税込
+  incl_touched: boolean; // 税込を手で入力したか（入力していなければ、税抜から自動で計算する）
 };
 
-const emptyRateRow: PriceRateRow = { id: "", position: "", employee_min: "0", employee_max: "", unit_price: "" };
+const emptyRateRow: PriceRateRow = {
+  id: "",
+  position: "",
+  employee_min: "0",
+  employee_max: "",
+  unit_price: "",
+  unit_price_incl: "",
+  incl_touched: false,
+};
+
+const inclFrom = (exclusive: string) => (exclusive.trim() === "" ? "" : String(toTaxIncluded(Number(exclusive) || 0)));
 
 const inputClass =
   "rounded-md border border-slate-300 px-3 py-2 text-sm focus:border-slate-500 focus:outline-none";
@@ -44,11 +57,29 @@ export function ProjectForm({
       employee_min: String(r.employee_min),
       employee_max: r.employee_max === null ? "" : String(r.employee_max),
       unit_price: String(r.unit_price),
+      unit_price_incl: String(priceInclusive(Number(r.unit_price), r.unit_price_incl)),
+      incl_touched: r.unit_price_incl !== null && Number(r.unit_price_incl) > 0,
     }))
+  );
+  // デフォルトの単価：税抜と税込。税込を手で入力するまでは、税抜から自動で計算する
+  const [unitPrice, setUnitPrice] = useState(project ? String(project.unit_price) : "");
+  const [unitPriceIncl, setUnitPriceIncl] = useState(
+    project ? String(priceInclusive(Number(project.unit_price), project.unit_price_incl)) : ""
+  );
+  const [inclTouched, setInclTouched] = useState(
+    project ? project.unit_price_incl !== null && Number(project.unit_price_incl) > 0 : false
   );
 
   function updateRateRow(idx: number, field: keyof PriceRateRow, value: string) {
-    setRateRows((prev) => prev.map((row, i) => (i === idx ? { ...row, [field]: value } : row)));
+    setRateRows((prev) =>
+      prev.map((row, i) => {
+        if (i !== idx) return row;
+        const next = { ...row, [field]: value };
+        if (field === "unit_price" && !row.incl_touched) next.unit_price_incl = inclFrom(value);
+        if (field === "unit_price_incl") next.incl_touched = true;
+        return next;
+      })
+    );
   }
 
   return (
@@ -82,7 +113,7 @@ export function ProjectForm({
       <div className="grid grid-cols-2 gap-4">
         <div className="flex flex-col gap-1">
           <label htmlFor="unit_price" className="text-sm font-medium text-slate-700">
-            デフォルトの単価（円） <span className="text-red-500">*</span>
+            デフォルトの単価・税抜（円） <span className="text-red-500">*</span>
           </label>
           <input
             id="unit_price"
@@ -90,10 +121,32 @@ export function ProjectForm({
             type="number"
             min={0}
             required
-            defaultValue={project ? String(project.unit_price) : ""}
+            value={unitPrice}
+            onChange={(e) => {
+              setUnitPrice(e.target.value);
+              if (!inclTouched) setUnitPriceIncl(inclFrom(e.target.value));
+            }}
             className={inputClass}
           />
-          <p className="text-xs text-slate-400">料金表に当てはまらないときの単価です。</p>
+          <p className="text-xs text-slate-400">料金表に当てはまらないときの単価です。請求書にはこの税抜の単価を使います。</p>
+        </div>
+        <div className="flex flex-col gap-1">
+          <label htmlFor="unit_price_incl" className="text-sm font-medium text-slate-700">
+            デフォルトの単価・税込（円）
+          </label>
+          <input
+            id="unit_price_incl"
+            name="unit_price_incl"
+            type="number"
+            min={0}
+            value={unitPriceIncl}
+            onChange={(e) => {
+              setUnitPriceIncl(e.target.value);
+              setInclTouched(true);
+            }}
+            className={inputClass}
+          />
+          <p className="text-xs text-slate-400">売上・獲得金額に使います。税抜を入れると自動で計算され、書き換えもできます。</p>
         </div>
         <div className="flex flex-col gap-1">
           <label htmlFor="effective_rate" className="text-sm font-medium text-slate-700">
@@ -126,7 +179,8 @@ export function ProjectForm({
                 <th className="px-2 py-2 text-left font-medium text-slate-600">役職</th>
                 <th className="px-2 py-2 text-left font-medium text-slate-600">従業員数(下限)</th>
                 <th className="px-2 py-2 text-left font-medium text-slate-600">従業員数(上限・空欄可)</th>
-                <th className="px-2 py-2 text-left font-medium text-slate-600">単価（円）</th>
+                <th className="px-2 py-2 text-left font-medium text-slate-600">単価・税抜（円）</th>
+                <th className="px-2 py-2 text-left font-medium text-slate-600">単価・税込（円）</th>
                 <th className="w-7"></th>
               </tr>
             </thead>
@@ -171,6 +225,15 @@ export function ProjectForm({
                       className={cellInputClass}
                     />
                   </td>
+                  <td className="p-1.5">
+                    <input
+                      type="number"
+                      min={0}
+                      value={row.unit_price_incl}
+                      onChange={(e) => updateRateRow(idx, "unit_price_incl", e.target.value)}
+                      className={cellInputClass}
+                    />
+                  </td>
                   <td className="p-1">
                     <button
                       type="button"
@@ -187,7 +250,7 @@ export function ProjectForm({
               ))}
               {rateRows.length === 0 && (
                 <tr>
-                  <td colSpan={5} className="px-3 py-4 text-center text-xs text-slate-400">
+                  <td colSpan={6} className="px-3 py-4 text-center text-xs text-slate-400">
                     料金表はありません（デフォルトの単価を使います）
                   </td>
                 </tr>

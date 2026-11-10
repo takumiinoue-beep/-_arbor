@@ -5,6 +5,7 @@ import Link from "next/link";
 import type { PriceRate, Project, ProjectStatus } from "@/types/database";
 import { formatCurrency } from "@/lib/format";
 import { latestByName } from "@/lib/projects";
+import { priceInclusive } from "@/lib/tax";
 import { DeleteProjectButton } from "./DeleteProjectButton";
 
 type ProjectRow = Project & { price_rates: PriceRate[] };
@@ -99,7 +100,8 @@ export function ProjectsClient({
             <tr>
               <th className="px-3 py-2 text-left font-medium text-slate-500">案件名</th>
               <th className="px-3 py-2 text-left font-medium text-slate-500">取引先</th>
-              <th className="px-3 py-2 text-right font-medium text-slate-500">デフォルト単価</th>
+              <th className="px-3 py-2 text-right font-medium text-slate-500">デフォルト単価（税抜）</th>
+              <th className="px-3 py-2 text-right font-medium text-slate-500">デフォルト単価（税込）</th>
               <th className="px-3 py-2 text-right font-medium text-slate-500">有効率</th>
               <th className="px-3 py-2 text-left font-medium text-slate-500">ステータス</th>
               {isAdmin && <th className="px-3 py-2 text-left font-medium text-slate-500">操作</th>}
@@ -133,6 +135,9 @@ export function ProjectsClient({
                       {p.client_id !== null ? (clientNames[p.client_id] ?? "-") : "-"}
                     </td>
                     <td className="px-3 py-2 text-right text-slate-700">{formatCurrency(Number(p.unit_price))}</td>
+                    <td className="px-3 py-2 text-right text-slate-700">
+                      {formatCurrency(priceInclusive(Number(p.unit_price), p.unit_price_incl))}
+                    </td>
                     <td className="px-3 py-2 text-right text-slate-700">{Number(p.effective_rate)}%</td>
                     <td className="px-3 py-2">
                       <span
@@ -166,6 +171,9 @@ export function ProjectsClient({
                         </td>
                         <td />
                         <td className="px-3 py-1.5 text-right text-slate-600">{formatCurrency(Number(r.unit_price))}</td>
+                        <td className="px-3 py-1.5 text-right text-slate-600">
+                          {formatCurrency(priceInclusive(Number(r.unit_price), r.unit_price_incl))}
+                        </td>
                         <td colSpan={isAdmin ? 3 : 2} />
                       </tr>
                     ))}
@@ -174,7 +182,7 @@ export function ProjectsClient({
             })}
             {rows.length === 0 && (
               <tr>
-                <td colSpan={isAdmin ? 6 : 5} className="px-3 py-6 text-center text-slate-400">
+                <td colSpan={isAdmin ? 7 : 6} className="px-3 py-6 text-center text-slate-400">
                   該当する案件がありません
                 </td>
               </tr>

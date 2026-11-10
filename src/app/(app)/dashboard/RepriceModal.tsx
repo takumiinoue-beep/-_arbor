@@ -97,8 +97,8 @@ export function RepriceModal({
                   <th className="px-3 py-2 text-left font-medium text-slate-500">案件名</th>
                   <th className="px-3 py-2 text-right font-medium text-slate-500">変わる登録</th>
                   <th className="px-3 py-2 text-right font-medium text-slate-500">件数</th>
-                  <th className="px-3 py-2 text-right font-medium text-slate-500">いまの獲得金額</th>
-                  <th className="px-3 py-2 text-right font-medium text-slate-500">反映後</th>
+                  <th className="px-3 py-2 text-right font-medium text-slate-500">いまの獲得金額（税込）</th>
+                  <th className="px-3 py-2 text-right font-medium text-slate-500">反映後（税込）</th>
                   <th className="px-3 py-2 text-right font-medium text-slate-500">差額</th>
                 </tr>
               </thead>

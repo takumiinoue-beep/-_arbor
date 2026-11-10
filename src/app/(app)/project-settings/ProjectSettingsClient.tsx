@@ -4,7 +4,8 @@ import { Fragment, useMemo, useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { Progress } from "@/components/common/Progress";
 import { formatCurrency } from "@/lib/format";
-import { defaultUnitPrice, latestByName } from "@/lib/projects";
+import { defaultUnitPrice, defaultUnitPriceIncl, latestByName } from "@/lib/projects";
+import { priceInclusive } from "@/lib/tax";
 import { acquisitionMonth } from "@/lib/sales";
 import type { ProjectAssignment } from "@/types/database";
 import { saveProjectAssignments } from "./actions";
@@ -14,9 +15,10 @@ export type SettingsProject = {
   name: string;
   start_date: string;
   status: string;
-  unit_price: number;
+  unit_price: number; // 税抜
+  unit_price_incl: number | null; // 税込
   effective_rate: number;
-  price_rates: { unit_price: number }[] | null;
+  price_rates: { unit_price: number; unit_price_incl: number | null }[] | null;
 };
 
 export type SettingsAcquisition = {
@@ -25,7 +27,8 @@ export type SettingsAcquisition = {
   project_id: string;
   staff_id: string;
   quantity: number;
-  amount: number;
+  unit_price: number; // 税抜
+  unit_price_incl: number | null; // 税込
 };
 
 type Row = { key: number; staffId: string; projectId: string; target: string; rate: string; memo: string };
@@ -162,7 +165,7 @@ export function ProjectSettingsClient({
       const key = `${a.staff_id}|${name}`;
       const cur = map.get(key) ?? { qty: 0, amount: 0 };
       cur.qty += a.quantity;
-      cur.amount += Number(a.amount);
+      cur.amount += a.quantity * priceInclusive(a.unit_price, a.unit_price_incl); // 税込の獲得金額
       map.set(key, cur);
     }
     return map;
@@ -173,7 +176,9 @@ export function ProjectSettingsClient({
     const project = projectById.get(r.projectId);
     const target = num(r.target);
     const rate = num(r.rate);
-    const unit = project ? defaultUnitPrice(masterByName.get(project.name) ?? project) : 0;
+    const master = project ? (masterByName.get(project.name) ?? project) : undefined;
+    const unit = master ? defaultUnitPrice(master) : 0;
+    const unitIncl = master ? defaultUnitPriceIncl(master) : 0;
     const got = project ? (acquired.get(`${r.staffId}|${project.name}`) ?? { qty: 0, amount: 0 }) : { qty: 0, amount: 0 };
     return {
       project,
@@ -182,7 +187,8 @@ export function ProjectSettingsClient({
       remaining: target - got.qty,
       progress: target > 0 ? (got.qty / target) * 100 : null,
       unit,
-      expected: Math.round(target * unit * (rate / 100)),
+      unitIncl,
+      expected: Math.round(target * unitIncl * (rate / 100)),
       billed: Math.round(got.amount * (rate / 100)),
     };
   });
@@ -330,7 +336,7 @@ export function ProjectSettingsClient({
         <p className="text-xs text-slate-500">
           案件一覧に登録した案件と、登録したメンバーを選んで、{monthText(month)}にやる件数を設定します。
           有効率は案件一覧の値が入り、行ごとに変えられます。現在件数は、ダッシュボードの案件獲得の登録から自動で入ります。
-          見込請求金額＝件数×単価（案件一覧のデフォルトの単価）×有効率、請求金額＝獲得金額×有効率です。
+          見込請求金額＝件数×単価（案件一覧のデフォルトの税込単価）×有効率、請求金額＝獲得金額（税込）×有効率です。単価は案件一覧で、税抜と税込を別々に設定します。
         </p>
         {isAdmin && (
           <div className="flex items-center gap-3">
@@ -369,10 +375,11 @@ export function ProjectSettingsClient({
               <th className={th}>現在件数</th>
               <th className={th}>残件数</th>
               <th className={th}>進捗率</th>
-              <th className={th}>単価</th>
+              <th className={th}>単価（税抜）</th>
+              <th className={th}>単価（税込）</th>
               <th className={th}>有効率</th>
-              <th className={th}>見込請求金額</th>
-              <th className={th}>請求金額</th>
+              <th className={th}>見込請求金額（税込）</th>
+              <th className={th}>請求金額（税込）</th>
               <th className={`${th} min-w-40`}>メモ</th>
               {isAdmin && <th className={`${th} w-10`} />}
             </tr>
@@ -434,6 +441,9 @@ export function ProjectSettingsClient({
                       <td className="border-l border-slate-200 px-3 py-1.5 text-right">
                         {c.project ? formatCurrency(c.unit) : ""}
                       </td>
+                      <td className="border-l border-slate-200 px-3 py-1.5 text-right">
+                        {c.project ? formatCurrency(c.unitIncl) : ""}
+                      </td>
                       <td className="border-l border-slate-200 px-1.5 py-1 text-right">
                         {isAdmin ? (
                           <div className="flex items-center gap-1">
@@ -487,7 +497,7 @@ export function ProjectSettingsClient({
                 {isAdmin && (
                   <tr className="border-t border-slate-200">
                     <td className={`${colorOf(staffId)}`} />
-                    <td colSpan={11} className="px-3 py-1">
+                    <td colSpan={12} className="px-3 py-1">
                       <button
                         type="button"
                         onClick={() => addRowFor(staffId)}
@@ -499,13 +509,13 @@ export function ProjectSettingsClient({
                   </tr>
                 )}
                 <tr>
-                  <td colSpan={isAdmin ? 12 : 11} className="h-1 bg-slate-100" />
+                  <td colSpan={isAdmin ? 13 : 12} className="h-1 bg-slate-100" />
                 </tr>
               </Fragment>
             ))}
             {staffOrder.length === 0 && (
               <tr>
-                <td colSpan={isAdmin ? 12 : 11} className="px-3 py-8 text-center text-slate-400">
+                <td colSpan={isAdmin ? 13 : 12} className="px-3 py-8 text-center text-slate-400">
                   {monthText(month)}の案件設定はまだありません。
                   {isAdmin ? "下のボタンからメンバーを追加してください。" : ""}
                 </td>
@@ -543,8 +553,8 @@ export function ProjectSettingsClient({
                 <th className="px-3 py-1.5 text-left">担当者</th>
                 <th className="px-3 py-1.5 text-right">案件数</th>
                 <th className="px-3 py-1.5 text-right">合計件数</th>
-                <th className="px-3 py-1.5 text-right">見込請求額</th>
-                <th className="px-3 py-1.5 text-right">請求額</th>
+                <th className="px-3 py-1.5 text-right">見込請求額（税込）</th>
+                <th className="px-3 py-1.5 text-right">請求額（税込）</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
@@ -580,7 +590,7 @@ export function ProjectSettingsClient({
                 <th className="px-3 py-1.5 text-right">目標件数</th>
                 <th className="px-3 py-1.5 text-right">現在件数</th>
                 <th className="px-3 py-1.5 text-right">残件数</th>
-                <th className="px-3 py-1.5 text-right">見込み請求</th>
+                <th className="px-3 py-1.5 text-right">見込み請求（税込）</th>
                 <th className="px-3 py-1.5 text-right">割合</th>
               </tr>
             </thead>

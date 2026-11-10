@@ -1,3 +1,5 @@
+import { priceInclusive } from "@/lib/tax";
+
 // 案件は案件名ごとに1つの案件として登録する。
 // 以前は月ごとに同じ名前の案件を作っていたため、同じ名前が複数ある場合は一番新しいものを案件として扱う
 // （過去の獲得はそのまま残り、案件名で結びつける）。
@@ -10,13 +12,25 @@ export function latestByName<T extends { name: string; start_date: string }>(pro
   return map;
 }
 
-// 案件のデフォルト単価。0円のときは、料金表があればその平均を使う
+// 案件のデフォルト単価（税抜）。0円のときは、料金表があればその平均を使う
 export function defaultUnitPrice(p: { unit_price: number; price_rates?: { unit_price: number }[] | null }): number {
   const price = Number(p.unit_price);
   if (price > 0) return price;
   const rates = p.price_rates ?? [];
   if (rates.length === 0) return 0;
   return Math.round(rates.reduce((sum, r) => sum + Number(r.unit_price), 0) / rates.length);
+}
+
+// 案件のデフォルト単価（税込）。税込の単価が登録されていればそれ、無ければ 税抜×1.1
+export function defaultUnitPriceIncl(p: {
+  unit_price: number;
+  unit_price_incl?: number | null;
+  price_rates?: { unit_price: number; unit_price_incl?: number | null }[] | null;
+}): number {
+  if (Number(p.unit_price) > 0) return priceInclusive(Number(p.unit_price), p.unit_price_incl);
+  const rates = p.price_rates ?? [];
+  if (rates.length === 0) return 0;
+  return Math.round(rates.reduce((sum, r) => sum + priceInclusive(Number(r.unit_price), r.unit_price_incl), 0) / rates.length);
 }
 
 export type RateProject = { id: string; name: string; start_date: string; effective_rate: number };

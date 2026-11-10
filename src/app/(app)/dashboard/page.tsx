@@ -7,7 +7,7 @@ import { DashboardClient, type AcquisitionRow } from "./DashboardClient";
 import type { AcquisitionProject } from "./AcquisitionButton";
 
 const ACQUISITION_COLUMNS =
-  "id, acquired_date, target_month, project_id, rate_id, staff_id, unit_price, quantity, amount, " +
+  "id, acquired_date, target_month, project_id, rate_id, staff_id, unit_price, unit_price_incl, quantity, amount, " +
   "project:projects(id, name), " +
   "staff:profiles!acquisitions_staff_id_fkey(id, name)";
 
@@ -20,7 +20,7 @@ export default async function DashboardPage() {
     supabase
       .from("projects")
       .select(
-        "id, name, start_date, status, unit_price, effective_rate, price_rates(id, position, employee_min, employee_max, unit_price)"
+        "id, name, start_date, status, unit_price, unit_price_incl, effective_rate, price_rates(id, position, employee_min, employee_max, unit_price, unit_price_incl)"
       ),
     supabase.from("profiles").select("id, name").order("member_no", { nullsFirst: false }).order("name"),
     fetchAllRows<AcquisitionRow>((from, to) =>

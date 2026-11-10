@@ -13,7 +13,8 @@ type AcquisitionRowInput = {
   rate_id: string | null;
   position: string | null;
   employee_count: number | null;
-  unit_price: number;
+  unit_price: number; // 税抜
+  unit_price_incl: number | null; // 税込（空なら 税抜×1.1 として扱う）
   quantity: number;
   staff_id: string;
   target_month: string | null; // "YYYY-MM-01"。獲得日と同じ月なら null
@@ -62,6 +63,12 @@ function parseAcquisitionRows(
       return { ok: false, error: "単価を決定できませんでした。役職・従業員数の選択を確認してください。" };
     }
 
+    const inclRaw = String(r.unit_price_incl ?? "").trim();
+    const unitPriceIncl = inclRaw === "" ? null : Number(inclRaw);
+    if (unitPriceIncl !== null && (Number.isNaN(unitPriceIncl) || unitPriceIncl <= 0)) {
+      return { ok: false, error: "税込の単価を決定できませんでした。" };
+    }
+
     const quantity = Number(r.quantity);
     if (!Number.isInteger(quantity) || quantity < 1) {
       return { ok: false, error: "件数は1以上の整数で入力してください。" };
@@ -73,6 +80,7 @@ function parseAcquisitionRows(
       position: position || null,
       employee_count: employeeCount,
       unit_price: unitPrice,
+      unit_price_incl: unitPriceIncl,
       quantity,
       staff_id: staffId,
       target_month: targetMonth,
@@ -218,13 +226,17 @@ async function loadRepriceData() {
     fetchAllRows<RepriceAcquisition>((from, to) =>
       supabase
         .from("acquisitions")
-        .select("id, acquired_date, target_month, project_id, staff_id, quantity, unit_price, position, employee_count")
+        .select(
+          "id, acquired_date, target_month, project_id, staff_id, quantity, unit_price, unit_price_incl, position, employee_count"
+        )
         .order("acquired_date")
         .order("id")
         .range(from, to)
         .overrideTypes<RepriceAcquisition[], { merge: false }>()
     ),
-    supabase.from("projects").select("id, name, start_date, unit_price, price_rates(position, employee_min, employee_max, unit_price)"),
+    supabase.from("projects").select(
+      "id, name, start_date, unit_price, unit_price_incl, price_rates(position, employee_min, employee_max, unit_price, unit_price_incl)"
+    ),
   ]);
   return { acquisitions, projects: (projects as unknown as RepriceProject[]) ?? [] };
 }
@@ -240,8 +252,8 @@ export async function previewRepricing(): Promise<{ rows: RepriceSummaryRow[] } 
       const cur = map.get(key) ?? { month: c.month, projectName: c.projectName, count: 0, quantity: 0, oldAmount: 0, newAmount: 0 };
       cur.count += 1;
       cur.quantity += c.quantity;
-      cur.oldAmount += c.oldPrice * c.quantity;
-      cur.newAmount += c.newPrice * c.quantity;
+      cur.oldAmount += c.oldPriceIncl * c.quantity;
+      cur.newAmount += c.newPriceIncl * c.quantity;
       map.set(key, cur);
     }
     const rows = Array.from(map.values()).sort(
@@ -267,13 +279,13 @@ export async function applyRepricing(months: string[]): Promise<{ error: string 
 
     const supabase = await createClient();
     const { data, error } = await supabase.rpc("reprice_acquisitions", {
-      p_updates: changes.map((c) => ({ id: c.id, unit_price: c.newPrice })),
+      p_updates: changes.map((c) => ({ id: c.id, unit_price: c.newPrice, unit_price_incl: c.newPriceIncl })),
       p_moves: planMoves(changes, acquisitions, projects),
     });
     if (error) {
       return {
         error: error.message.includes("reprice_acquisitions")
-          ? "反映できませんでした。マイグレーション 0034 を実行してください。"
+          ? "反映できませんでした。マイグレーション 0034 と 0035 を実行してください。"
           : `反映できませんでした: ${error.message}`,
       };
     }

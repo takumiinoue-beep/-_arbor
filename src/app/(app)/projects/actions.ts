@@ -13,7 +13,8 @@ type PriceRateInput = {
   position: string;
   employee_min: number;
   employee_max: number | null;
-  unit_price: number;
+  unit_price: number; // 税抜
+  unit_price_incl: number | null; // 税込（空なら 税抜×1.1 として扱う）
   sort_order: number;
 };
 
@@ -46,6 +47,11 @@ function parsePriceRateRows(raw: string): { ok: true; value: PriceRateInput[] } 
     if (Number.isNaN(unitPrice) || unitPrice < 0)
       return { ok: false, error: `料金表「${position}」の単価は0以上の数値で入力してください。` };
 
+    const inclRaw = String(r.unit_price_incl ?? "").trim();
+    const unitPriceIncl = inclRaw === "" ? null : Number(inclRaw);
+    if (unitPriceIncl !== null && (Number.isNaN(unitPriceIncl) || unitPriceIncl < 0))
+      return { ok: false, error: `料金表「${position}」の税込の単価は0以上の数値で入力してください。` };
+
     const id = String(r.id ?? "").trim();
     parsed.push({
       id: id || null,
@@ -53,6 +59,7 @@ function parsePriceRateRows(raw: string): { ok: true; value: PriceRateInput[] } 
       employee_min: employeeMin,
       employee_max: employeeMax,
       unit_price: unitPrice,
+      unit_price_incl: unitPriceIncl,
       sort_order: parsed.length,
     });
   }
@@ -63,6 +70,8 @@ function parsePriceRateRows(raw: string): { ok: true; value: PriceRateInput[] } 
 function parseProjectForm(formData: FormData) {
   const name = String(formData.get("name") ?? "").trim();
   const unitPrice = Number(formData.get("unit_price") ?? 0);
+  const unitPriceInclRaw = String(formData.get("unit_price_incl") ?? "").trim();
+  const unitPriceIncl = unitPriceInclRaw === "" ? null : Number(unitPriceInclRaw);
   const effectiveRate = Number(formData.get("effective_rate") ?? 100);
   const status = String(formData.get("status") ?? "進行中") as ProjectStatus;
   const priceRatesRaw = String(formData.get("price_rates") ?? "[]");
@@ -72,6 +81,8 @@ function parseProjectForm(formData: FormData) {
   if (!name) return { ok: false, error: "案件名は必須です。" } as const;
   if (Number.isNaN(unitPrice) || unitPrice < 0)
     return { ok: false, error: "デフォルトの単価は0以上の数値で入力してください。" } as const;
+  if (unitPriceIncl !== null && (Number.isNaN(unitPriceIncl) || unitPriceIncl < 0))
+    return { ok: false, error: "デフォルトの税込の単価は0以上の数値で入力してください。" } as const;
   if (Number.isNaN(effectiveRate) || effectiveRate < 0 || effectiveRate > 100)
     return { ok: false, error: "有効率は0〜100で入力してください。" } as const;
   if (clientId !== null && !Number.isInteger(clientId)) return { ok: false, error: "取引先が不正です。" } as const;
@@ -82,7 +93,7 @@ function parseProjectForm(formData: FormData) {
 
   return {
     ok: true,
-    value: { name, unit_price: unitPrice, effective_rate: effectiveRate, status, client_id: clientId },
+    value: { name, unit_price: unitPrice, unit_price_incl: unitPriceIncl, effective_rate: effectiveRate, status, client_id: clientId },
     priceRates: priceRates.value,
   } as const;
 }
@@ -117,6 +128,7 @@ async function savePriceRates(
       employee_min: r.employee_min,
       employee_max: r.employee_max,
       unit_price: r.unit_price,
+      unit_price_incl: r.unit_price_incl,
       sort_order: r.sort_order,
     };
     if (r.id && existingIds.has(r.id)) {
@@ -149,8 +161,8 @@ export async function createProject(_prevState: FormState, formData: FormData): 
     .single();
   if (error) {
     return {
-      error: error.message.includes("client_id")
-        ? "登録に失敗しました。マイグレーション 0031 を実行してください。"
+      error: error.message.includes("client_id") || error.message.includes("unit_price_incl")
+        ? "登録に失敗しました。マイグレーション 0031・0035 を実行してください。"
         : `登録に失敗しました: ${error.message}`,
     };
   }
@@ -187,8 +199,8 @@ export async function updateProject(id: string, _prevState: FormState, formData:
   const { error } = await supabase.from("projects").update(parsed.value).eq("id", id);
   if (error) {
     return {
-      error: error.message.includes("client_id")
-        ? "更新に失敗しました。マイグレーション 0031 を実行してください。"
+      error: error.message.includes("client_id") || error.message.includes("unit_price_incl")
+        ? "更新に失敗しました。マイグレーション 0031・0035 を実行してください。"
         : `更新に失敗しました: ${error.message}`,
     };
   }
