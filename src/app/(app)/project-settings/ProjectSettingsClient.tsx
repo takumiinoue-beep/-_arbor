@@ -336,7 +336,7 @@ export function ProjectSettingsClient({
         <p className="text-xs text-slate-500">
           案件一覧に登録した案件と、登録したメンバーを選んで、{monthText(month)}にやる件数を設定します。
           有効率は案件一覧の値が入り、行ごとに変えられます。現在件数は、ダッシュボードの案件獲得の登録から自動で入ります。
-          見込請求金額＝件数×単価（案件一覧のデフォルトの税込単価）×有効率、請求金額＝獲得金額（税込）×有効率です。単価は案件一覧で、税抜と税込を別々に設定します。
+          見込請求金額＝件数×単価（案件一覧のデフォルトの税込単価）×有効率、請求金額＝獲得金額（税込）×有効率です。単価は案件一覧で設定します（請求書発行だけ税抜）。
         </p>
         {isAdmin && (
           <div className="flex items-center gap-3">
@@ -375,7 +375,6 @@ export function ProjectSettingsClient({
               <th className={th}>現在件数</th>
               <th className={th}>残件数</th>
               <th className={th}>進捗率</th>
-              <th className={th}>単価（税抜）</th>
               <th className={th}>単価（税込）</th>
               <th className={th}>有効率</th>
               <th className={th}>見込請求金額（税込）</th>
@@ -439,9 +438,6 @@ export function ProjectSettingsClient({
                         {c.project ? <Progress acquired={c.current} target={c.target} /> : ""}
                       </td>
                       <td className="border-l border-slate-200 px-3 py-1.5 text-right">
-                        {c.project ? formatCurrency(c.unit) : ""}
-                      </td>
-                      <td className="border-l border-slate-200 px-3 py-1.5 text-right">
                         {c.project ? formatCurrency(c.unitIncl) : ""}
                       </td>
                       <td className="border-l border-slate-200 px-1.5 py-1 text-right">
@@ -497,7 +493,7 @@ export function ProjectSettingsClient({
                 {isAdmin && (
                   <tr className="border-t border-slate-200">
                     <td className={`${colorOf(staffId)}`} />
-                    <td colSpan={12} className="px-3 py-1">
+                    <td colSpan={11} className="px-3 py-1">
                       <button
                         type="button"
                         onClick={() => addRowFor(staffId)}
@@ -509,13 +505,13 @@ export function ProjectSettingsClient({
                   </tr>
                 )}
                 <tr>
-                  <td colSpan={isAdmin ? 13 : 12} className="h-1 bg-slate-100" />
+                  <td colSpan={isAdmin ? 12 : 11} className="h-1 bg-slate-100" />
                 </tr>
               </Fragment>
             ))}
             {staffOrder.length === 0 && (
               <tr>
-                <td colSpan={isAdmin ? 13 : 12} className="px-3 py-8 text-center text-slate-400">
+                <td colSpan={isAdmin ? 12 : 11} className="px-3 py-8 text-center text-slate-400">
                   {monthText(month)}の案件設定はまだありません。
                   {isAdmin ? "下のボタンからメンバーを追加してください。" : ""}
                 </td>

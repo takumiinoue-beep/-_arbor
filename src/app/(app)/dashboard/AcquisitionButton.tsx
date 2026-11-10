@@ -355,11 +355,9 @@ export function AcquisitionButton({
                     <p className="text-xs text-slate-400">
                       単価：
                       <span className="font-semibold text-slate-700">
-                        {resolved.unitPrice !== null ? formatCurrency(resolved.unitPrice) : "未確定"}
+                        {resolved.unitPriceIncl !== null ? formatCurrency(resolved.unitPriceIncl) : "未確定"}
                       </span>
-                      {resolved.unitPrice !== null && resolved.unitPriceIncl !== null && (
-                        <span className="ml-1">（税抜）／税込 {formatCurrency(resolved.unitPriceIncl)}</span>
-                      )}
+                      <span className="ml-1">（税込）</span>
                       {resolved.unitPrice !== null && resolved.hasRates && (
                         <span className="ml-1">
                           {resolved.matchedRate ? "（料金表）" : "（デフォルト単価。役職・従業員数が料金表に当てはまりません）"}

@@ -38,6 +38,7 @@ type SalesEntry = {
   targetMonth: string | null; // 計上月（"YYYY-MM"）。獲得日と同じ月のときは null
   quantity: number;
   unitPrice: number;
+  unitPriceIncl: number; // 税込
   opName: string;
   projectName: string;
 };
@@ -166,6 +167,7 @@ function buildCells(args: {
       targetMonth: a.target_month ? a.target_month.slice(0, 7) : null,
       quantity: a.quantity,
       unitPrice: a.unit_price,
+      unitPriceIncl: priceInclusive(a.unit_price, a.unit_price_incl),
       opName: cell.opName,
       projectName: name,
     });
@@ -504,7 +506,7 @@ function EnterConfirmedForm({ month, rows, onClose }: { month: string; rows: Con
           <thead className="bg-slate-50">
             <tr>
               <th className="px-3 py-2 text-left font-medium text-slate-500">案件名</th>
-              <th className="px-3 py-2 text-right font-medium text-slate-500">単価（税抜）</th>
+              <th className="px-3 py-2 text-right font-medium text-slate-500">単価（税込）</th>
               <th className="px-3 py-2 text-right font-medium text-slate-500">獲得件数</th>
               <th className="px-3 py-2 text-right font-medium text-slate-500">有効件数</th>
               <th className="px-3 py-2 text-right font-medium text-slate-500">確定金額（税込）</th>
@@ -521,10 +523,7 @@ function EnterConfirmedForm({ month, rows, onClose }: { month: string; rows: Con
                 {op.rows.map((r) => (
                   <tr key={r.key}>
                     <td className="py-1.5 pr-3 pl-6 text-slate-700">{r.projectName}</td>
-                    <td className="px-3 py-1.5 text-right text-slate-700">
-                      {formatCurrency(r.unitPrice)}
-                      <span className="ml-1 text-xs text-slate-400">（税込 {formatCurrency(r.unitPriceIncl)}）</span>
-                    </td>
+                    <td className="px-3 py-1.5 text-right text-slate-700">{formatCurrency(r.unitPriceIncl)}</td>
                     <td className="px-3 py-1.5 text-right text-slate-700">{qtyText(r.acquiredQty)}</td>
                     <td className="px-3 py-1.5 text-right">
                       <span className="inline-flex items-center gap-1">
@@ -615,7 +614,7 @@ function EditAcquisitionForm({ entry, onClose }: { entry: SalesEntry; onClose: (
   return (
     <div className="flex flex-col gap-4 text-sm">
       <p className="text-slate-600">
-        {entry.opName}／{entry.projectName}／単価 {formatCurrency(entry.unitPrice)}
+        {entry.opName}／{entry.projectName}／単価 {formatCurrency(entry.unitPriceIncl)}
       </p>
       <label className="flex flex-col gap-1">
         <span className="font-medium text-slate-700">獲得日</span>
@@ -928,7 +927,7 @@ export function DashboardClient({
           <div className="border-b border-slate-200 px-4 py-2.5">
             <h2 className="text-sm font-semibold text-slate-700">有効件数（案件×単価ごと）</h2>
             <p className="text-xs text-slate-400">
-              全OPの合計です。有効件数は右上の「有効入力」から、OPごとに入力します。確定金額（有効件数×税込の単価）は会計の売上に、有効件数×税抜の単価は請求書発行に反映されます。
+              全OPの合計です。有効件数は右上の「有効入力」から、OPごとに入力します。確定金額（有効件数×単価）は、会計の売上と請求書発行に反映されます（請求書発行の金額だけ、税抜です）。
             </p>
           </div>
           <div className="overflow-x-auto">
@@ -937,7 +936,7 @@ export function DashboardClient({
                 <tr>
                   {monthTab === "all" && <th className="px-3 py-2 text-left font-medium text-slate-500">月</th>}
                   <th className="px-3 py-2 text-left font-medium text-slate-500">案件名</th>
-                  <th className="px-3 py-2 text-right font-medium text-slate-500">単価（税抜）</th>
+                  <th className="px-3 py-2 text-right font-medium text-slate-500">単価（税込）</th>
                   <th className="px-3 py-2 text-right font-medium text-slate-500">獲得件数</th>
                   <th className="px-3 py-2 text-right font-medium text-slate-500">獲得金額（税込）</th>
                   <th className="px-3 py-2 text-right font-medium text-slate-500">有効件数</th>
@@ -949,10 +948,7 @@ export function DashboardClient({
                   <tr key={row.key} className="hover:bg-slate-50">
                     {monthTab === "all" && <td className="px-3 py-1.5 text-slate-600">{monthText(row.month)}</td>}
                     <td className="px-3 py-1.5 text-slate-700">{row.projectName}</td>
-                    <td className="px-3 py-1.5 text-right text-slate-700">
-                      {formatCurrency(row.unitPrice)}
-                      <span className="ml-1 text-xs text-slate-400">（税込 {formatCurrency(row.unitPriceIncl)}）</span>
-                    </td>
+                    <td className="px-3 py-1.5 text-right text-slate-700">{formatCurrency(row.unitPriceIncl)}</td>
                     <td className="px-3 py-1.5 text-right text-slate-700">{qtyText(row.acquiredQty)}</td>
                     <td className="px-3 py-1.5 text-right text-slate-700">{formatCurrency(row.acquiredAmount)}</td>
                     <td className="px-3 py-1.5 text-right text-slate-700">{qtyText(row.confirmedQty)}</td>
@@ -1075,8 +1071,7 @@ export function DashboardClient({
                             <Fragment key={leafKey}>
                               <tr className="bg-slate-50/70 text-xs">
                                 <td className="py-1.5 pr-3 pl-14 text-slate-600">
-                                  {monthTab === "all" && `${monthText(leaf.month)}　`}単価 {formatCurrency(leaf.unitPrice)}
-                                  <span className="ml-1 text-slate-400">（税込 {formatCurrency(leaf.unitPriceIncl)}）</span>
+                                  {monthTab === "all" && `${monthText(leaf.month)}　`}単価 {formatCurrency(leaf.unitPriceIncl)}
                                 </td>
                                 <td className="px-3 py-1.5" colSpan={2} />
                                 <td className="px-3 py-1.5 text-right text-slate-600">
