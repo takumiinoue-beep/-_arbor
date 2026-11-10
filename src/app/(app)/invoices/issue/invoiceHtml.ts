@@ -18,9 +18,11 @@ export function buildInvoiceHTML(
 
   // PDF保存時のファイル名はブラウザがdocument.titleから決めるため、
   // 「◯月請求書_取引先名御中」になるようタイトルを組み立てる。
+  // ◯月は請求日の前月（例：11月11日の請求書は「10月請求書」。1月の請求日は12月）。
   const escapeHtml = (s: string) =>
     s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
-  const month = form.date ? Number(form.date.slice(5, 7)) : null;
+  const dateMonth = form.date ? Number(form.date.slice(5, 7)) : null;
+  const month = dateMonth ? (dateMonth === 1 ? 12 : dateMonth - 1) : null;
   const titleParts = [month ? `${month}月請求書` : "請求書"];
   if (clientName) titleParts.push(`${clientName}御中`);
   const pageTitle = escapeHtml(titleParts.join("_"));
