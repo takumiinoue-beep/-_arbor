@@ -1017,7 +1017,21 @@ export function DashboardClient({
       </div>
 
       <div className="overflow-x-auto rounded-lg border border-slate-200 bg-white">
-        <table className="min-w-full divide-y divide-slate-200 text-sm">
+        {/* 列の幅を固定して、行を開いても列の位置がずれないようにする（左の名前の列が、余った幅を使う） */}
+        <table className="w-full min-w-[1370px] table-fixed divide-y divide-slate-200 text-sm">
+          <colgroup>
+            <col />
+            <col style={{ width: 70 }} />
+            <col style={{ width: 90 }} />
+            <col style={{ width: 130 }} />
+            <col style={{ width: 90 }} />
+            <col style={{ width: 150 }} />
+            <col style={{ width: 130 }} />
+            <col style={{ width: 90 }} />
+            <col style={{ width: 130 }} />
+            <col style={{ width: 140 }} />
+            <col style={{ width: 130 }} />
+          </colgroup>
           <thead className="bg-slate-50">
             <tr>
               <th className="px-3 py-2 text-left font-medium text-slate-500">{topHeader}</th>
