@@ -184,6 +184,7 @@ export function ProjectSettingsClient({
       project,
       target,
       current: got.qty,
+      currentAmount: got.amount, // 現在の獲得金額（税込）
       remaining: target - got.qty,
       progress: target > 0 ? (got.qty / target) * 100 : null,
       unit,
@@ -213,13 +214,14 @@ export function ProjectSettingsClient({
   });
 
   const projectSummary = (() => {
-    const map = new Map<string, { name: string; target: number; current: number; expected: number }>();
+    const map = new Map<string, { name: string; target: number; current: number; currentAmount: number; expected: number }>();
     rows.forEach((r, i) => {
       const c = computed[i];
       if (!c.project) return;
-      const cur = map.get(c.project.name) ?? { name: c.project.name, target: 0, current: 0, expected: 0 };
+      const cur = map.get(c.project.name) ?? { name: c.project.name, target: 0, current: 0, currentAmount: 0, expected: 0 };
       cur.target += c.target;
       cur.current += c.current;
+      cur.currentAmount += c.currentAmount;
       cur.expected += c.expected;
       map.set(c.project.name, cur);
     });
@@ -585,6 +587,7 @@ export function ProjectSettingsClient({
                 <th className="px-3 py-1.5 text-left">案件名</th>
                 <th className="px-3 py-1.5 text-right">目標件数</th>
                 <th className="px-3 py-1.5 text-right">現在件数</th>
+                <th className="px-3 py-1.5 text-right">現在の獲得金額（税込）</th>
                 <th className="px-3 py-1.5 text-right">残件数</th>
                 <th className="px-3 py-1.5 text-right">見込み請求（税込）</th>
                 <th className="px-3 py-1.5 text-right">割合</th>
@@ -597,6 +600,7 @@ export function ProjectSettingsClient({
                   <td className="px-3 py-1.5">{p.name}</td>
                   <td className="px-3 py-1.5 text-right">{p.target}件</td>
                   <td className="px-3 py-1.5 text-right">{p.current}件</td>
+                  <td className="px-3 py-1.5 text-right">{formatCurrency(p.currentAmount)}</td>
                   <td className="px-3 py-1.5 text-right">{p.target - p.current}件</td>
                   <td className="px-3 py-1.5 text-right">{formatCurrency(p.expected)}</td>
                   <td className="px-3 py-1.5 text-right">
@@ -606,7 +610,7 @@ export function ProjectSettingsClient({
               ))}
               {projectSummary.length === 0 && (
                 <tr>
-                  <td colSpan={7} className="px-3 py-4 text-center text-slate-400">
+                  <td colSpan={8} className="px-3 py-4 text-center text-slate-400">
                     案件が設定されていません
                   </td>
                 </tr>
