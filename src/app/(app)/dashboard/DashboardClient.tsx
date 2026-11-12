@@ -71,6 +71,8 @@ type Cell = {
   acquiredAmount: number;
   confirmedQty: number;
   confirmedAmount: number;
+  expected: number; // 見込請求額（税込）＝設定件数×税込単価×有効率
+  billed: number; // 請求額（税込）＝獲得金額（税込）×有効率
 };
 
 // 表示の切り替え：OPごと（OP→案件）／案件ごと（案件→OP）
@@ -86,6 +88,8 @@ type Group = {
   acquiredAmount: number;
   confirmedQty: number;
   confirmedAmount: number;
+  expected: number;
+  billed: number;
 };
 
 const sum = <T,>(list: T[], f: (r: T) => number) => list.reduce((acc, r) => acc + f(r), 0);
@@ -100,8 +104,9 @@ function buildCells(args: {
   staffName: Map<string, string>;
   lines: ConfirmedLine[]; // OPごとに按分した有効件数
   defaultPriceByName: Map<string, number>; // 案件名 → デフォルトの税込単価
+  rateOf: (month: string, staffId: string, projectId: string) => number; // 有効率（%）
 }): Cell[] {
-  const { acquisitions, assignments, nameById, staffName, lines, defaultPriceByName } = args;
+  const { acquisitions, assignments, nameById, staffName, lines, defaultPriceByName, rateOf } = args;
   const confirmedBy = new Map(
     lines.map((l) => [`${l.month}|${l.staffId}|${l.projectName}|${l.unitPrice}`, l.quantity])
   );
@@ -123,6 +128,8 @@ function buildCells(args: {
         acquiredAmount: 0,
         confirmedQty: 0,
         confirmedAmount: 0,
+        expected: 0,
+        billed: 0,
       };
       cells.set(key, cell);
     }
@@ -134,6 +141,9 @@ function buildCells(args: {
     if (!name) continue;
     const cell = cellFor(as.staff_id, name, staffName.get(as.staff_id) ?? "不明");
     cell.target += as.target_quantity;
+    cell.expected += Math.round(
+      (as.target_quantity * (defaultPriceByName.get(name) ?? 0) * Number(as.effective_rate)) / 100
+    );
   }
 
   for (const a of acquisitions) {
@@ -161,6 +171,8 @@ function buildCells(args: {
     }
     leaf.acquiredQty += a.quantity;
     leaf.acquiredAmount += a.quantity * priceInclusive(a.unit_price, a.unit_price_incl);
+    cell.billed +=
+      (a.quantity * priceInclusive(a.unit_price, a.unit_price_incl) * rateOf(month, a.staff_id, a.project_id)) / 100;
     leaf.entries.push({
       id: a.id,
       acquiredDate: a.acquired_date,
@@ -181,6 +193,7 @@ function buildCells(args: {
     cell.acquiredAmount = sum(cell.leaves, (l) => l.acquiredAmount);
     cell.confirmedQty = sum(cell.leaves, (l) => l.confirmedQty);
     cell.confirmedAmount = sum(cell.leaves, (l) => l.confirmedAmount);
+    cell.billed = Math.round(cell.billed);
   }
 
   return Array.from(cells.values());
@@ -276,6 +289,8 @@ function groupCells(cells: Cell[], view: View, rankOf: (staffId: string) => numb
     acquiredAmount: sum(list, (c) => c.acquiredAmount),
     confirmedQty: sum(list, (c) => c.confirmedQty),
     confirmedAmount: sum(list, (c) => c.confirmedAmount),
+    expected: sum(list, (c) => c.expected),
+    billed: sum(list, (c) => c.billed),
   })).sort((a, b) =>
     // OPごとの表示では、OPはメンバー番号の小さい順
     view === "op"
@@ -820,9 +835,13 @@ export function DashboardClient({
     );
   }, [filteredAcquisitions, lines]);
 
+  // 有効率（%）：その月・OPの案件設定にあればそれ、無ければ案件一覧の有効率
+  const rateOf = useMemo(() => createRateResolver(projects, assignments), [projects, assignments]);
+
   const cells = useMemo(
     () =>
       buildCells({
+        rateOf,
         acquisitions: filteredAcquisitions,
         assignments: filteredAssignments,
         nameById,
@@ -830,7 +849,7 @@ export function DashboardClient({
         lines,
         defaultPriceByName,
       }),
-    [filteredAcquisitions, filteredAssignments, nameById, staffName, lines, defaultPriceByName]
+    [filteredAcquisitions, filteredAssignments, nameById, staffName, lines, defaultPriceByName, rateOf]
   );
   // メンバー番号の小さい順（staffList はその順で渡される）
   const rankOf = useMemo(() => {
@@ -873,64 +892,18 @@ export function DashboardClient({
       acquiredAmount: sum(cells, (c) => c.acquiredAmount),
       confirmedQty: sum(cells, (c) => c.confirmedQty),
       confirmedAmount: sum(cells, (c) => c.confirmedAmount),
+      expected: sum(cells, (c) => c.expected),
+      billed: sum(cells, (c) => c.billed),
     }),
     [cells]
   );
 
-  // 担当者（OP）別のサマリー：案件数・設定件数・見込請求額・請求額（有効率をかけた税込の金額）・獲得件数・獲得金額
-  const opSummary = useMemo(() => {
-    const rateOf = createRateResolver(projects, assignments);
-    type Acc = {
-      staffId: string;
-      name: string;
-      projectCount: number;
-      target: number;
-      expected: number;
-      billedRaw: number;
-      acquiredQty: number;
-      acquiredAmount: number;
-    };
-    const map = new Map<string, Acc>();
-    const accOf = (staffId: string, name: string): Acc => {
-      let acc = map.get(staffId);
-      if (!acc) {
-        acc = { staffId, name, projectCount: 0, target: 0, expected: 0, billedRaw: 0, acquiredQty: 0, acquiredAmount: 0 };
-        map.set(staffId, acc);
-      }
-      return acc;
-    };
-    for (const c of cells) {
-      const acc = accOf(c.staffId, c.opName);
-      acc.projectCount += 1;
-      acc.target += c.target;
-      acc.acquiredQty += c.acquiredQty;
-      acc.acquiredAmount += c.acquiredAmount;
-    }
-    for (const a of filteredAssignments) {
-      const name = nameById.get(a.project_id);
-      const acc = map.get(a.staff_id);
-      if (!name || !acc) continue;
-      acc.expected += Math.round(
-        (a.target_quantity * (defaultPriceByName.get(name) ?? 0) * Number(a.effective_rate)) / 100
-      );
-    }
-    for (const a of filteredAcquisitions) {
-      const acc = map.get(a.staff_id);
-      if (!acc) continue;
-      const amount = a.quantity * priceInclusive(a.unit_price, a.unit_price_incl);
-      acc.billedRaw += (amount * rateOf(acquisitionMonth(a), a.staff_id, a.project_id)) / 100;
-    }
-    return Array.from(map.values())
-      .map((acc) => ({ ...acc, billed: Math.round(acc.billedRaw) }))
-      .sort((a, b) => rankOf(a.staffId) - rankOf(b.staffId) || cmp(a.name, b.name));
-  }, [cells, filteredAssignments, filteredAcquisitions, projects, assignments, nameById, defaultPriceByName, rankOf]);
-
   const monthText = (m: string) =>
     spansMultipleYears ? `${m.slice(0, 4)}年${Number(m.slice(5, 7))}月` : `${Number(m.slice(5, 7))}月`;
-  const midHeader = view === "op" ? "案件名" : "OP";
+  const topHeader = view === "op" ? "担当者" : "案件";
   const topKind = view === "op" ? "OP" : "案件";
   const midLabel = (c: Cell) => (view === "op" ? c.projectName : c.opName);
-  const COLS = 8;
+  const COLS = 11;
 
   return (
     <div className="flex flex-col gap-6">
@@ -1043,56 +1016,12 @@ export function DashboardClient({
         </div>
       </div>
 
-      {opSummary.length > 0 && (
-        <div className="overflow-hidden rounded-lg border border-slate-300 bg-white">
-          <div className="bg-teal-800 px-3 py-1.5 text-center text-sm font-semibold text-white">担当者別サマリー</div>
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead className="bg-sky-100 text-xs text-slate-700">
-                <tr>
-                  <th className="px-3 py-1.5 text-left">担当者</th>
-                  <th className="px-3 py-1.5 text-right">案件数</th>
-                  <th className="px-3 py-1.5 text-right">合計件数</th>
-                  <th className="px-3 py-1.5 text-right">見込請求額（税込）</th>
-                  <th className="px-3 py-1.5 text-right">請求額（税込）</th>
-                  <th className="px-3 py-1.5 text-right">獲得件数</th>
-                  <th className="px-3 py-1.5 text-right">獲得金額（税込）</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-100">
-                {opSummary.map((o) => (
-                  <tr key={o.staffId}>
-                    <td className="px-3 py-1.5">{o.name}</td>
-                    <td className="px-3 py-1.5 text-right">{o.projectCount}</td>
-                    <td className="px-3 py-1.5 text-right">{qtyText(o.target)}</td>
-                    <td className="px-3 py-1.5 text-right">{formatCurrency(o.expected)}</td>
-                    <td className="px-3 py-1.5 text-right">{formatCurrency(o.billed)}</td>
-                    <td className="px-3 py-1.5 text-right">{qtyText(o.acquiredQty)}</td>
-                    <td className="px-3 py-1.5 text-right">{formatCurrency(o.acquiredAmount)}</td>
-                  </tr>
-                ))}
-              </tbody>
-              <tfoot className="bg-sky-200 font-bold text-slate-900">
-                <tr>
-                  <td className="px-3 py-1.5">合計</td>
-                  <td className="px-3 py-1.5 text-right">{sum(opSummary, (o) => o.projectCount)}</td>
-                  <td className="px-3 py-1.5 text-right">{qtyText(sum(opSummary, (o) => o.target))}</td>
-                  <td className="px-3 py-1.5 text-right">{formatCurrency(sum(opSummary, (o) => o.expected))}</td>
-                  <td className="px-3 py-1.5 text-right">{formatCurrency(sum(opSummary, (o) => o.billed))}</td>
-                  <td className="px-3 py-1.5 text-right">{qtyText(sum(opSummary, (o) => o.acquiredQty))}</td>
-                  <td className="px-3 py-1.5 text-right">{formatCurrency(sum(opSummary, (o) => o.acquiredAmount))}</td>
-                </tr>
-              </tfoot>
-            </table>
-          </div>
-        </div>
-      )}
-
       <div className="overflow-x-auto rounded-lg border border-slate-200 bg-white">
         <table className="min-w-full divide-y divide-slate-200 text-sm">
           <thead className="bg-slate-50">
             <tr>
-              <th className="px-3 py-2 text-left font-medium text-slate-500">{midHeader}</th>
+              <th className="px-3 py-2 text-left font-medium text-slate-500">{topHeader}</th>
+              <th className="px-3 py-2 text-right font-medium text-slate-500">{view === "op" ? "案件数" : "OP数"}</th>
               <th className="px-3 py-2 text-right font-medium text-slate-500">設定件数</th>
               <th className="px-3 py-2 text-right font-medium text-slate-500">設定金額（税込）</th>
               <th className="px-3 py-2 text-right font-medium text-slate-500">獲得件数</th>
@@ -1100,40 +1029,39 @@ export function DashboardClient({
               <th className="px-3 py-2 text-right font-medium text-slate-500">獲得金額（税込）</th>
               <th className="px-3 py-2 text-right font-medium text-slate-500">有効件数</th>
               <th className="px-3 py-2 text-right font-medium text-slate-500">確定金額（税込）</th>
+              <th className="px-3 py-2 text-right font-medium text-slate-500">見込請求額（税込）</th>
+              <th className="px-3 py-2 text-right font-medium text-slate-500">請求額（税込）</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-100">
             {groups.map((group) => {
-              // 案件ごとの表示では、案件の行に合計を出し、OPごとの行は案件を押すと開く
-              const collapsible = view === "project";
-              const open = !collapsible || expanded.has(group.key);
+              // 担当者（案件ごとの表示では案件）の行に合計を出し、押すと内訳（案件・OPの行）が開く
+              const open = expanded.has(group.key);
               return (
               <Fragment key={group.key}>
-                {collapsible ? (
-                  <tr className="cursor-pointer bg-slate-700 font-bold text-white hover:bg-slate-600" onClick={() => toggle(setExpanded, group.key)}>
-                    <td className="px-3 py-2">
-                      <span className="flex items-center gap-1.5">
-                        <span className="inline-block w-3 text-xs text-slate-300">{open ? "▼" : "▶"}</span>
-                        {group.label}
-                      </span>
-                    </td>
-                    <td className="px-3 py-2 text-right">{qtyText(group.target)}</td>
-                    <td className="px-3 py-2 text-right">{formatCurrency(group.targetAmount)}</td>
-                    <td className="px-3 py-2 text-right">{qtyText(group.acquiredQty)}</td>
-                    <td className="px-3 py-2 text-right">
-                      <Progress acquired={group.acquiredQty} target={group.target} />
-                    </td>
-                    <td className="px-3 py-2 text-right">{formatCurrency(group.acquiredAmount)}</td>
-                    <td className="px-3 py-2 text-right">{qtyText(group.confirmedQty)}</td>
-                    <td className="px-3 py-2 text-right">{formatCurrency(Math.round(group.confirmedAmount))}</td>
-                  </tr>
-                ) : (
-                  <tr className="bg-slate-700">
-                    <td colSpan={COLS} className="px-3 py-2 font-bold text-white">
+                <tr
+                  className="cursor-pointer bg-slate-700 font-bold text-white hover:bg-slate-600"
+                  onClick={() => toggle(setExpanded, group.key)}
+                >
+                  <td className="px-3 py-2">
+                    <span className="flex items-center gap-1.5">
+                      <span className="inline-block w-3 text-xs text-slate-300">{open ? "▼" : "▶"}</span>
                       {group.label}
-                    </td>
-                  </tr>
-                )}
+                    </span>
+                  </td>
+                  <td className="px-3 py-2 text-right">{group.cells.length}</td>
+                  <td className="px-3 py-2 text-right">{qtyText(group.target)}</td>
+                  <td className="px-3 py-2 text-right">{formatCurrency(group.targetAmount)}</td>
+                  <td className="px-3 py-2 text-right">{qtyText(group.acquiredQty)}</td>
+                  <td className="px-3 py-2 text-right">
+                    <Progress acquired={group.acquiredQty} target={group.target} />
+                  </td>
+                  <td className="px-3 py-2 text-right">{formatCurrency(group.acquiredAmount)}</td>
+                  <td className="px-3 py-2 text-right">{qtyText(group.confirmedQty)}</td>
+                  <td className="px-3 py-2 text-right">{formatCurrency(Math.round(group.confirmedAmount))}</td>
+                  <td className="px-3 py-2 text-right">{formatCurrency(group.expected)}</td>
+                  <td className="px-3 py-2 text-right">{formatCurrency(group.billed)}</td>
+                </tr>
                 {open && group.cells.map((cell) => {
                   const cellKey = `${group.key}|${cell.key}`;
                   const canExpand = cell.leaves.length > 0;
@@ -1157,6 +1085,7 @@ export function DashboardClient({
                             <span className="pl-[18px]">{midLabel(cell)}</span>
                           )}
                         </td>
+                        <td className="px-3 py-2" />
                         <td className="px-3 py-2 text-right text-slate-700">{qtyText(cell.target)}</td>
                         <td className="px-3 py-2 text-right text-slate-700">{formatCurrency(cell.targetAmount)}</td>
                         <td className="px-3 py-2 text-right text-slate-700">
@@ -1175,6 +1104,8 @@ export function DashboardClient({
                         <td className="px-3 py-2 text-right font-medium text-slate-900">
                           {formatCurrency(Math.round(cell.confirmedAmount))}
                         </td>
+                        <td className="px-3 py-2 text-right text-slate-700">{formatCurrency(cell.expected)}</td>
+                        <td className="px-3 py-2 text-right text-slate-700">{formatCurrency(cell.billed)}</td>
                       </tr>
                       {expanded.has(cellKey) &&
                         cell.leaves.map((leaf) => {
@@ -1185,7 +1116,7 @@ export function DashboardClient({
                                 <td className="py-1.5 pr-3 pl-14 text-slate-600">
                                   {monthTab === "all" && `${monthText(leaf.month)}　`}単価 {formatCurrency(leaf.unitPriceIncl)}
                                 </td>
-                                <td className="px-3 py-1.5" colSpan={2} />
+                                <td className="px-3 py-1.5" colSpan={3} />
                                 <td className="px-3 py-1.5 text-right text-slate-600">
                                   <QtyWithDetail qty={leaf.acquiredQty} entries={leaf.entries} isAdmin={isAdmin} onEdit={setEditing} />
                                 </td>
@@ -1199,6 +1130,7 @@ export function DashboardClient({
                                 <td className="px-3 py-1.5 text-right font-medium text-slate-800">
                                   {formatCurrency(Math.round(leaf.confirmedAmount))}
                                 </td>
+                                <td className="px-3 py-1.5" colSpan={2} />
                               </tr>
                             </Fragment>
                           );
@@ -1206,20 +1138,6 @@ export function DashboardClient({
                     </Fragment>
                   );
                 })}
-                {open && !collapsible && (
-                <tr className="border-t-2 border-slate-300 bg-slate-200 font-bold text-slate-900">
-                  <td className="py-2 pr-3 pl-8">{group.label}　小計</td>
-                  <td className="px-3 py-2 text-right">{qtyText(group.target)}</td>
-                  <td className="px-3 py-2 text-right">{formatCurrency(group.targetAmount)}</td>
-                  <td className="px-3 py-2 text-right">{qtyText(group.acquiredQty)}</td>
-                  <td className="px-3 py-2 text-right">
-                    <Progress acquired={group.acquiredQty} target={group.target} />
-                  </td>
-                  <td className="px-3 py-2 text-right">{formatCurrency(group.acquiredAmount)}</td>
-                  <td className="px-3 py-2 text-right">{qtyText(group.confirmedQty)}</td>
-                  <td className="px-3 py-2 text-right">{formatCurrency(Math.round(group.confirmedAmount))}</td>
-                </tr>
-                )}
               </Fragment>
               );
             })}
@@ -1235,6 +1153,7 @@ export function DashboardClient({
             <tfoot className="border-t-2 border-slate-400 bg-slate-300 font-bold text-slate-900">
               <tr>
                 <td className="px-3 py-2">合計</td>
+                <td className="px-3 py-2 text-right">{sum(groups, (g) => g.cells.length)}</td>
                 <td className="px-3 py-2 text-right">{qtyText(totals.target)}</td>
                 <td className="px-3 py-2 text-right">{formatCurrency(totals.targetAmount)}</td>
                 <td className="px-3 py-2 text-right">{qtyText(totals.acquiredQty)}</td>
@@ -1244,6 +1163,8 @@ export function DashboardClient({
                 <td className="px-3 py-2 text-right">{formatCurrency(totals.acquiredAmount)}</td>
                 <td className="px-3 py-2 text-right">{qtyText(totals.confirmedQty)}</td>
                 <td className="px-3 py-2 text-right">{formatCurrency(Math.round(totals.confirmedAmount))}</td>
+                <td className="px-3 py-2 text-right">{formatCurrency(totals.expected)}</td>
+                <td className="px-3 py-2 text-right">{formatCurrency(totals.billed)}</td>
               </tr>
             </tfoot>
           )}
@@ -1251,7 +1172,7 @@ export function DashboardClient({
       </div>
       <p className="-mt-3 text-xs text-slate-400">
         {topKind}ごとにまとめています。設定件数は「案件設定」で決めた件数、設定金額＝設定件数×案件のデフォルトの税込単価、獲得金額・確定金額は税込、獲得件数は案件獲得の登録の合計です。進捗率＝獲得件数÷設定件数です。有効件数は、「有効入力」ボタンでOPごと・案件×単価ごとに入力します（管理者のみ）。確定金額＝有効件数×税込の単価です。
-        案件ごとの表示では、案件の行を押すとOPごとの内訳が開きます。OPの行の▶を押すと単価ごとの件数が見えます。獲得件数にカーソルを当てると、登録日ごとの件数が表示されます。
+        担当者（案件ごとの表示では案件）の行を押すと、内訳が開きます。内訳の行の▶を押すと単価ごとの件数が見えます。見込請求額＝設定件数×税込単価×有効率、請求額＝獲得金額（税込）×有効率です。獲得件数にカーソルを当てると、登録日ごとの件数が表示されます。
       </p>
 
       <div className="rounded-lg border border-slate-200 bg-white p-4">
