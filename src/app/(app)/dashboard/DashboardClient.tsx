@@ -725,13 +725,13 @@ function DailyChart({ group, monthKey }: { group: DailyGroup; monthKey: string }
   return (
     <div className="px-3 pt-8 pb-3">
       <div className="flex">
-        <div className="relative mr-2 h-44 w-8 shrink-0 text-[10px] text-slate-400">
+        <div className="relative mr-2 h-44 w-8 shrink-0 text-xs text-slate-400">
           {ticks.map((t) => (
             <span key={t} className="absolute right-0 translate-y-1/2" style={{ bottom: `${(t / top) * 100}%` }}>
               {t}
             </span>
           ))}
-          <span className="absolute right-0 -top-6 text-[10px]">（件）</span>
+          <span className="absolute right-0 -top-6 text-xs">（件）</span>
         </div>
         <div className="relative h-44 flex-1 border-b border-l border-slate-300">
           {ticks.slice(1).map((t) => (
@@ -746,13 +746,13 @@ function DailyChart({ group, monthKey }: { group: DailyGroup; monthKey: string }
               const pct = (b.count / top) * 100;
               return (
                 <div key={b.key} className="group relative flex h-full flex-1 flex-col items-center justify-end">
-                  {b.count > 0 && <span className="mb-0.5 text-[10px] leading-none text-slate-600">{b.count}</span>}
+                  {b.count > 0 && <span className="mb-0.5 text-xs leading-none text-slate-600">{b.count}</span>}
                   <div
                     className={`w-full rounded-t ${b.other ? "bg-amber-400" : "bg-sky-500"} group-hover:opacity-80`}
                     style={{ height: `${pct}%`, minHeight: b.count > 0 ? 2 : 0 }}
                   />
                   <div
-                    className={`pointer-events-none absolute z-30 hidden w-max max-w-[260px] rounded-md border border-slate-200 bg-white p-2 text-xs shadow-lg group-hover:block ${
+                    className={`pointer-events-none absolute z-30 hidden w-max max-w-[260px] rounded-md border border-slate-200 bg-white p-2 text-sm shadow-lg group-hover:block ${
                       idx < bars.length / 2 ? "left-0" : "right-0"
                     }`}
                     style={{ bottom: `calc(${pct}% + 22px)` }}
@@ -786,7 +786,7 @@ function DailyChart({ group, monthKey }: { group: DailyGroup; monthKey: string }
         {bars.map((b) => (
           <div
             key={b.key}
-            className={`flex-1 text-center text-[10px] ${
+            className={`flex-1 text-center text-xs ${
               b.weekday === 0 ? "text-red-500" : b.weekday === 6 ? "text-blue-500" : "text-slate-500"
             }`}
           >
@@ -875,7 +875,7 @@ export function DashboardClient({
   const [monthTab, setMonthTab] = useState(currentMonthKey);
   const [view, setView] = useState<View>("op");
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
-  const [dailyCollapsed, setDailyCollapsed] = useState<Set<string>>(new Set()); // グラフは最初から開いておく
+  const [dailyExpanded, setDailyExpanded] = useState<Set<string>>(new Set()); // グラフは最初は閉じておく
   const [editing, setEditing] = useState<SalesEntry | null>(null);
   const [confirming, setConfirming] = useState(false);
   const [repricing, setRepricing] = useState(false);
@@ -1141,7 +1141,7 @@ export function DashboardClient({
 
       <div className="overflow-x-auto rounded-lg border border-slate-200 bg-white">
         {/* 列の幅を固定して、行を開いても列の位置がずれないようにする（左の名前の列が、余った幅を使う） */}
-        <table className="w-full min-w-[1370px] table-fixed divide-y divide-slate-200 text-sm">
+        <table className="w-full min-w-[1400px] table-fixed divide-y divide-slate-200 text-sm">
           <colgroup>
             <col />
             <col style={{ width: 70 }} />
@@ -1152,8 +1152,8 @@ export function DashboardClient({
             <col style={{ width: 130 }} />
             <col style={{ width: 90 }} />
             <col style={{ width: 130 }} />
+            <col style={{ width: 160 }} />
             <col style={{ width: 140 }} />
-            <col style={{ width: 130 }} />
           </colgroup>
           <thead className="bg-slate-50">
             <tr>
@@ -1321,20 +1321,20 @@ export function DashboardClient({
             <div key={g.label} className="rounded-md border border-slate-200">
               <button
                 type="button"
-                onClick={() => toggle(setDailyCollapsed, g.label)}
+                onClick={() => toggle(setDailyExpanded, g.label)}
                 className="flex w-full items-center justify-between rounded-t-md bg-slate-100 px-3 py-2 text-left"
               >
-                <span className="font-semibold text-slate-800">
+                <span className="text-sm font-semibold text-slate-800">
                   <span className="mr-1.5 inline-block w-3 text-xs text-slate-400">
-                    {dailyCollapsed.has(g.label) ? "▶" : "▼"}
+                    {dailyExpanded.has(g.label) ? "▼" : "▶"}
                   </span>
                   {g.label}
                 </span>
-                <span className="text-xs text-slate-500">
+                <span className="text-sm text-slate-500">
                   月合計 {g.totalCount}件 / {formatCurrency(g.totalAmount)}
                 </span>
               </button>
-              {!dailyCollapsed.has(g.label) && <DailyChart group={g} monthKey={dailyTargetMonth} />}
+              {dailyExpanded.has(g.label) && <DailyChart group={g} monthKey={dailyTargetMonth} />}
             </div>
           ))}
           {daily.length === 0 && (
