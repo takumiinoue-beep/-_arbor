@@ -199,12 +199,16 @@ function buildCells(args: {
   return Array.from(cells.values());
 }
 
+// グラフのカーソルを当てたときに出す内訳（OPごとの表示では案件、案件ごとの表示ではOP）
+type DailyItem = { label: string; count: number };
+type DailyAmount = { count: number; amount: number; items: DailyItem[] };
+
 type DailyGroup = {
   staffId: string;
   label: string;
-  days: { day: number; date: string; count: number; amount: number }[];
+  days: ({ day: number; date: string } & DailyAmount)[];
   // 計上月以外の月に登録した分（来月のアポを今月のうちに登録した分など）
-  other: { count: number; amount: number };
+  other: DailyAmount;
   totalCount: number;
   totalAmount: number;
 };
@@ -221,42 +225,47 @@ function buildDaily(
   const month = Number(monthKey.slice(5, 7));
   const daysInMonth = new Date(Date.UTC(year, month, 0)).getUTCDate();
 
-  type Acc = {
-    staffId: string;
-    days: Map<number, { count: number; amount: number }>;
-    other: { count: number; amount: number };
-  };
+  type Bucket = { count: number; amount: number; items: Map<string, number> };
+  const newBucket = (): Bucket => ({ count: 0, amount: 0, items: new Map() });
+  type Acc = { staffId: string; days: Map<number, Bucket>; other: Bucket };
   const byLabel = new Map<string, Acc>();
   for (const a of acquisitions) {
     if (acquisitionMonth(a) !== monthKey) continue;
     const label = view === "op" ? (a.staff?.name ?? "不明") : (a.project?.name ?? "(削除済み案件)");
-    const acc = byLabel.get(label) ?? { staffId: a.staff_id, days: new Map(), other: { count: 0, amount: 0 } };
+    const detail = view === "op" ? (a.project?.name ?? "(削除済み案件)") : (a.staff?.name ?? "不明");
+    const amount = a.quantity * priceInclusive(a.unit_price, a.unit_price_incl);
+    const acc = byLabel.get(label) ?? { staffId: a.staff_id, days: new Map(), other: newBucket() };
+    let bucket: Bucket;
     if (a.acquired_date.slice(0, 7) === monthKey) {
       const day = Number(a.acquired_date.slice(8, 10));
-      const entry = acc.days.get(day) ?? { count: 0, amount: 0 };
-      entry.count += a.quantity;
-      entry.amount += a.quantity * priceInclusive(a.unit_price, a.unit_price_incl);
-      acc.days.set(day, entry);
+      bucket = acc.days.get(day) ?? newBucket();
+      acc.days.set(day, bucket);
     } else {
-      acc.other.count += a.quantity;
-      acc.other.amount += a.quantity * priceInclusive(a.unit_price, a.unit_price_incl);
+      bucket = acc.other;
     }
+    bucket.count += a.quantity;
+    bucket.amount += amount;
+    bucket.items.set(detail, (bucket.items.get(detail) ?? 0) + a.quantity);
     byLabel.set(label, acc);
   }
 
   const result: DailyGroup[] = [];
   for (const [label, acc] of byLabel) {
+    const toAmount = (b: Bucket | undefined): DailyAmount => ({
+      count: b?.count ?? 0,
+      amount: b?.amount ?? 0,
+      items: Array.from(b?.items ?? [], ([label, count]) => ({ label, count })).sort((x, y) => y.count - x.count),
+    });
     const days = Array.from({ length: daysInMonth }, (_, i) => {
       const day = i + 1;
       const date = `${monthKey}-${String(day).padStart(2, "0")}`;
-      const entry = acc.days.get(day) ?? { count: 0, amount: 0 };
-      return { day, date, count: entry.count, amount: entry.amount };
+      return { day, date, ...toAmount(acc.days.get(day)) };
     });
     result.push({
       staffId: acc.staffId,
       label,
       days,
-      other: acc.other,
+      other: toAmount(acc.other),
       totalCount: days.reduce((sum, d) => sum + d.count, 0) + acc.other.count,
       totalAmount: days.reduce((sum, d) => sum + d.amount, 0) + acc.other.amount,
     });
@@ -675,6 +684,120 @@ function EditAcquisitionForm({ entry, onClose }: { entry: SalesEntry; onClose: (
   );
 }
 
+// デイリー実績の棒グラフ（横軸＝日付、縦軸＝獲得件数）。棒にカーソルを当てると、その日の内訳を出す
+const WEEKDAYS = ["日", "月", "火", "水", "木", "金", "土"];
+
+function DailyChart({ group, monthKey }: { group: DailyGroup; monthKey: string }) {
+  const year = Number(monthKey.slice(0, 4));
+  const month = Number(monthKey.slice(5, 7));
+  const bars = [
+    ...(group.other.count > 0
+      ? [
+          {
+            key: "other",
+            label: "他月",
+            title: "他の月に登録（アポなど）",
+            weekday: -1,
+            other: true,
+            ...group.other,
+          },
+        ]
+      : []),
+    ...group.days.map((d) => ({
+      key: d.date,
+      label: String(d.day),
+      title: `${month}/${d.day}（${WEEKDAYS[new Date(Date.UTC(year, month - 1, d.day)).getUTCDay()]}）`,
+      weekday: new Date(Date.UTC(year, month - 1, d.day)).getUTCDay(),
+      other: false,
+      count: d.count,
+      amount: d.amount,
+      items: d.items,
+    })),
+  ];
+
+  // 縦軸は、一番多い日が収まるキリのいい数字まで
+  const max = Math.max(1, ...bars.map((b) => b.count));
+  const step = max <= 5 ? 1 : Math.ceil(max / 5);
+  const top = step * Math.ceil(max / step);
+  const ticks: number[] = [];
+  for (let v = 0; v <= top; v += step) ticks.push(v);
+
+  return (
+    <div className="px-3 pt-8 pb-3">
+      <div className="flex">
+        <div className="relative mr-2 h-44 w-8 shrink-0 text-[10px] text-slate-400">
+          {ticks.map((t) => (
+            <span key={t} className="absolute right-0 translate-y-1/2" style={{ bottom: `${(t / top) * 100}%` }}>
+              {t}
+            </span>
+          ))}
+          <span className="absolute right-0 -top-6 text-[10px]">（件）</span>
+        </div>
+        <div className="relative h-44 flex-1 border-b border-l border-slate-300">
+          {ticks.slice(1).map((t) => (
+            <div
+              key={t}
+              className="absolute right-0 left-0 border-t border-slate-100"
+              style={{ bottom: `${(t / top) * 100}%` }}
+            />
+          ))}
+          <div className="absolute inset-0 flex items-end gap-[3px] px-1">
+            {bars.map((b, idx) => {
+              const pct = (b.count / top) * 100;
+              return (
+                <div key={b.key} className="group relative flex h-full flex-1 flex-col items-center justify-end">
+                  {b.count > 0 && <span className="mb-0.5 text-[10px] leading-none text-slate-600">{b.count}</span>}
+                  <div
+                    className={`w-full rounded-t ${b.other ? "bg-amber-400" : "bg-sky-500"} group-hover:opacity-80`}
+                    style={{ height: `${pct}%`, minHeight: b.count > 0 ? 2 : 0 }}
+                  />
+                  <div
+                    className={`pointer-events-none absolute z-30 hidden w-max max-w-[260px] rounded-md border border-slate-200 bg-white p-2 text-xs shadow-lg group-hover:block ${
+                      idx < bars.length / 2 ? "left-0" : "right-0"
+                    }`}
+                    style={{ bottom: `calc(${pct}% + 22px)` }}
+                  >
+                    <p className="font-semibold text-slate-800">{b.title}</p>
+                    {b.count === 0 ? (
+                      <p className="mt-0.5 text-slate-400">獲得なし</p>
+                    ) : (
+                      <>
+                        <p className="mt-0.5 text-slate-600">
+                          {b.count}件　{formatCurrency(b.amount)}
+                        </p>
+                        <ul className="mt-1 border-t border-slate-100 pt-1">
+                          {b.items.map((it) => (
+                            <li key={it.label} className="flex justify-between gap-4 whitespace-nowrap text-slate-700">
+                              <span>{it.label}</span>
+                              <span>{it.count}件</span>
+                            </li>
+                          ))}
+                        </ul>
+                      </>
+                    )}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      </div>
+      <div className="ml-10 flex gap-[3px] px-1 pt-1">
+        {bars.map((b) => (
+          <div
+            key={b.key}
+            className={`flex-1 text-center text-[10px] ${
+              b.weekday === 0 ? "text-red-500" : b.weekday === 6 ? "text-blue-500" : "text-slate-500"
+            }`}
+          >
+            {b.label}
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 // 会社全体の目標と進捗（大きな数字と進捗バー）
 function BigProgress({
   title,
@@ -752,7 +875,7 @@ export function DashboardClient({
   const [monthTab, setMonthTab] = useState(currentMonthKey);
   const [view, setView] = useState<View>("op");
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
-  const [dailyExpanded, setDailyExpanded] = useState<Set<string>>(new Set());
+  const [dailyCollapsed, setDailyCollapsed] = useState<Set<string>>(new Set()); // グラフは最初から開いておく
   const [editing, setEditing] = useState<SalesEntry | null>(null);
   const [confirming, setConfirming] = useState(false);
   const [repricing, setRepricing] = useState(false);
@@ -1195,15 +1318,15 @@ export function DashboardClient({
         </h2>
         <div className="flex flex-col gap-2">
           {daily.map((g) => (
-            <div key={g.label} className="overflow-hidden rounded-md border border-slate-200">
+            <div key={g.label} className="rounded-md border border-slate-200">
               <button
                 type="button"
-                onClick={() => toggle(setDailyExpanded, g.label)}
-                className="flex w-full items-center justify-between bg-slate-100 px-3 py-2 text-left"
+                onClick={() => toggle(setDailyCollapsed, g.label)}
+                className="flex w-full items-center justify-between rounded-t-md bg-slate-100 px-3 py-2 text-left"
               >
                 <span className="font-semibold text-slate-800">
                   <span className="mr-1.5 inline-block w-3 text-xs text-slate-400">
-                    {dailyExpanded.has(g.label) ? "▼" : "▶"}
+                    {dailyCollapsed.has(g.label) ? "▶" : "▼"}
                   </span>
                   {g.label}
                 </span>
@@ -1211,35 +1334,7 @@ export function DashboardClient({
                   月合計 {g.totalCount}件 / {formatCurrency(g.totalAmount)}
                 </span>
               </button>
-              {dailyExpanded.has(g.label) && (
-                <div className="overflow-x-auto">
-                  <table className="min-w-full divide-y divide-slate-200 text-xs">
-                    <thead className="bg-slate-50">
-                      <tr>
-                        <th className="px-2 py-1 text-left font-medium text-slate-500">日付</th>
-                        <th className="px-2 py-1 text-right font-medium text-slate-500">獲得件数</th>
-                        <th className="px-2 py-1 text-right font-medium text-slate-500">獲得金額（税込）</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-slate-100">
-                      {g.other.count > 0 && (
-                        <tr className="bg-amber-50 text-slate-700">
-                          <td className="px-2 py-1">他の月に登録（アポなど）</td>
-                          <td className="px-2 py-1 text-right">{g.other.count}件</td>
-                          <td className="px-2 py-1 text-right">{formatCurrency(g.other.amount)}</td>
-                        </tr>
-                      )}
-                      {g.days.map((d) => (
-                        <tr key={d.date} className={d.count === 0 ? "text-slate-300" : undefined}>
-                          <td className="px-2 py-1">{d.day}日</td>
-                          <td className="px-2 py-1 text-right">{d.count}件</td>
-                          <td className="px-2 py-1 text-right">{formatCurrency(d.amount)}</td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              )}
+              {!dailyCollapsed.has(g.label) && <DailyChart group={g} monthKey={dailyTargetMonth} />}
             </div>
           ))}
           {daily.length === 0 && (
