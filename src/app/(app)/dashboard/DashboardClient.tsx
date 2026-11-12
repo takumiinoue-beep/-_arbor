@@ -4,7 +4,7 @@ import { Fragment, useMemo, useState, useTransition } from "react";
 import type { Acquisition, Profile, ProjectAssignment } from "@/types/database";
 import { formatCurrency } from "@/lib/format";
 import { Progress } from "@/components/common/Progress";
-import { defaultUnitPriceIncl, latestByName } from "@/lib/projects";
+import { createRateResolver, defaultUnitPriceIncl, latestByName } from "@/lib/projects";
 import { priceInclusive } from "@/lib/tax";
 import { acquisitionMonth, confirmedLines, type ConfirmedData, type ConfirmedLine } from "@/lib/sales";
 import { AcquisitionButton, type AcquisitionProject } from "./AcquisitionButton";
@@ -30,7 +30,7 @@ export type AcquisitionRow = Pick<
   staff: { id: string; name: string } | null;
 };
 
-type DashboardAssignment = Pick<ProjectAssignment, "month" | "staff_id" | "project_id" | "target_quantity">;
+type DashboardAssignment = Pick<ProjectAssignment, "month" | "staff_id" | "project_id" | "target_quantity" | "effective_rate">;
 
 type SalesEntry = {
   id: string;
@@ -823,6 +823,54 @@ export function DashboardClient({
     [cells]
   );
 
+  // 担当者（OP）別のサマリー：案件数・設定件数・見込請求額・請求額（有効率をかけた税込の金額）・獲得件数・獲得金額
+  const opSummary = useMemo(() => {
+    const rateOf = createRateResolver(projects, assignments);
+    type Acc = {
+      staffId: string;
+      name: string;
+      projectCount: number;
+      target: number;
+      expected: number;
+      billedRaw: number;
+      acquiredQty: number;
+      acquiredAmount: number;
+    };
+    const map = new Map<string, Acc>();
+    const accOf = (staffId: string, name: string): Acc => {
+      let acc = map.get(staffId);
+      if (!acc) {
+        acc = { staffId, name, projectCount: 0, target: 0, expected: 0, billedRaw: 0, acquiredQty: 0, acquiredAmount: 0 };
+        map.set(staffId, acc);
+      }
+      return acc;
+    };
+    for (const c of cells) {
+      const acc = accOf(c.staffId, c.opName);
+      acc.projectCount += 1;
+      acc.target += c.target;
+      acc.acquiredQty += c.acquiredQty;
+      acc.acquiredAmount += c.acquiredAmount;
+    }
+    for (const a of filteredAssignments) {
+      const name = nameById.get(a.project_id);
+      const acc = map.get(a.staff_id);
+      if (!name || !acc) continue;
+      acc.expected += Math.round(
+        (a.target_quantity * (defaultPriceByName.get(name) ?? 0) * Number(a.effective_rate)) / 100
+      );
+    }
+    for (const a of filteredAcquisitions) {
+      const acc = map.get(a.staff_id);
+      if (!acc) continue;
+      const amount = a.quantity * priceInclusive(a.unit_price, a.unit_price_incl);
+      acc.billedRaw += (amount * rateOf(acquisitionMonth(a), a.staff_id, a.project_id)) / 100;
+    }
+    return Array.from(map.values())
+      .map((acc) => ({ ...acc, billed: Math.round(acc.billedRaw) }))
+      .sort((a, b) => rankOf(a.staffId) - rankOf(b.staffId) || cmp(a.name, b.name));
+  }, [cells, filteredAssignments, filteredAcquisitions, projects, assignments, nameById, defaultPriceByName, rankOf]);
+
   const monthText = (m: string) =>
     spansMultipleYears ? `${m.slice(0, 4)}年${Number(m.slice(5, 7))}月` : `${Number(m.slice(5, 7))}月`;
   const midHeader = view === "op" ? "案件名" : "OP";
@@ -921,6 +969,51 @@ export function DashboardClient({
           <AcquisitionButton projects={projects} staffList={staffList} currentUserId={currentUserId} progress={progress} />
         </div>
       </div>
+
+      {opSummary.length > 0 && (
+        <div className="overflow-hidden rounded-lg border border-slate-300 bg-white">
+          <div className="bg-teal-800 px-3 py-1.5 text-center text-sm font-semibold text-white">担当者別サマリー</div>
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead className="bg-sky-100 text-xs text-slate-700">
+                <tr>
+                  <th className="px-3 py-1.5 text-left">担当者</th>
+                  <th className="px-3 py-1.5 text-right">案件数</th>
+                  <th className="px-3 py-1.5 text-right">合計件数</th>
+                  <th className="px-3 py-1.5 text-right">見込請求額（税込）</th>
+                  <th className="px-3 py-1.5 text-right">請求額（税込）</th>
+                  <th className="px-3 py-1.5 text-right">獲得件数</th>
+                  <th className="px-3 py-1.5 text-right">獲得金額（税込）</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100">
+                {opSummary.map((o) => (
+                  <tr key={o.staffId}>
+                    <td className="px-3 py-1.5">{o.name}</td>
+                    <td className="px-3 py-1.5 text-right">{o.projectCount}</td>
+                    <td className="px-3 py-1.5 text-right">{qtyText(o.target)}</td>
+                    <td className="px-3 py-1.5 text-right">{formatCurrency(o.expected)}</td>
+                    <td className="px-3 py-1.5 text-right">{formatCurrency(o.billed)}</td>
+                    <td className="px-3 py-1.5 text-right">{qtyText(o.acquiredQty)}</td>
+                    <td className="px-3 py-1.5 text-right">{formatCurrency(o.acquiredAmount)}</td>
+                  </tr>
+                ))}
+              </tbody>
+              <tfoot className="bg-sky-200 font-bold text-slate-900">
+                <tr>
+                  <td className="px-3 py-1.5">合計</td>
+                  <td className="px-3 py-1.5 text-right">{sum(opSummary, (o) => o.projectCount)}</td>
+                  <td className="px-3 py-1.5 text-right">{qtyText(sum(opSummary, (o) => o.target))}</td>
+                  <td className="px-3 py-1.5 text-right">{formatCurrency(sum(opSummary, (o) => o.expected))}</td>
+                  <td className="px-3 py-1.5 text-right">{formatCurrency(sum(opSummary, (o) => o.billed))}</td>
+                  <td className="px-3 py-1.5 text-right">{qtyText(sum(opSummary, (o) => o.acquiredQty))}</td>
+                  <td className="px-3 py-1.5 text-right">{formatCurrency(sum(opSummary, (o) => o.acquiredAmount))}</td>
+                </tr>
+              </tfoot>
+            </table>
+          </div>
+        </div>
+      )}
 
       <div className="overflow-x-auto rounded-lg border border-slate-200 bg-white">
         <table className="min-w-full divide-y divide-slate-200 text-sm">

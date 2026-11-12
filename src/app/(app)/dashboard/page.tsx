@@ -32,7 +32,7 @@ export default async function DashboardPage() {
         .range(from, to)
         .overrideTypes<AcquisitionRow[], { merge: false }>()
     ),
-    supabase.from("project_assignments").select("id, month, staff_id, project_id, target_quantity"),
+    supabase.from("project_assignments").select("id, month, staff_id, project_id, target_quantity, effective_rate"),
   ]);
 
   const confirmed = await fetchConfirmedRows();
@@ -45,7 +45,7 @@ export default async function DashboardPage() {
       <DashboardClient
         projects={(projects as AcquisitionProject[]) ?? []}
         assignments={
-          (assignments as Pick<ProjectAssignment, "month" | "staff_id" | "project_id" | "target_quantity">[]) ?? []
+          (assignments as Pick<ProjectAssignment, "month" | "staff_id" | "project_id" | "target_quantity" | "effective_rate">[]) ?? []
         }
         staffList={(staffList as Pick<Profile, "id" | "name">[]) ?? []}
         acquisitions={acquisitions}
