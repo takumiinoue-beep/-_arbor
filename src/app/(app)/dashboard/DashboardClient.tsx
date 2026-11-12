@@ -660,6 +660,60 @@ function EditAcquisitionForm({ entry, onClose }: { entry: SalesEntry; onClose: (
   );
 }
 
+// 会社全体の目標と進捗（大きな数字と進捗バー）
+function BigProgress({
+  title,
+  targetLabel,
+  acquiredLabel,
+  target,
+  acquired,
+  format,
+}: {
+  title: string;
+  targetLabel: string;
+  acquiredLabel: string;
+  target: number;
+  acquired: number;
+  format: (n: number) => string;
+}) {
+  const ratio = target > 0 ? (acquired / target) * 100 : null;
+  const done = ratio !== null && ratio >= 100;
+  const remaining = target - acquired;
+  return (
+    <div className="rounded-xl border border-slate-200 bg-white p-5">
+      <p className="mb-3 text-sm font-semibold text-slate-500">{title}</p>
+      <div className="grid grid-cols-2 gap-4">
+        <div>
+          <p className="text-xs text-slate-400">{targetLabel}</p>
+          <p className="mt-1 text-3xl font-bold tracking-tight text-slate-900">{format(target)}</p>
+        </div>
+        <div>
+          <p className="text-xs text-slate-400">{acquiredLabel}</p>
+          <p className="mt-1 text-3xl font-bold tracking-tight text-sky-700">{format(acquired)}</p>
+        </div>
+      </div>
+      <div className="mt-4 flex items-center gap-4">
+        <div className="h-4 flex-1 overflow-hidden rounded-full bg-slate-200">
+          <div
+            className={`h-full rounded-full transition-all ${done ? "bg-emerald-500" : "bg-sky-500"}`}
+            style={{ width: `${ratio === null ? 0 : Math.min(100, ratio)}%` }}
+          />
+        </div>
+        <p className={`w-28 text-right text-3xl font-bold ${done ? "text-emerald-600" : "text-slate-900"}`}>
+          {ratio === null ? "-" : `${Math.round(ratio * 10) / 10}%`}
+        </p>
+      </div>
+      <p className="mt-2 text-xs text-slate-400">
+        {ratio === null
+          ? "目標が設定されていません（案件設定で件数を設定します）"
+          : done
+            ? `目標を達成しています（+${format(-remaining)}）`
+            : `目標まで あと ${format(remaining)}`}
+      </p>
+    </div>
+  );
+}
+
 export function DashboardClient({
   projects,
   assignments,
@@ -925,6 +979,25 @@ export function DashboardClient({
             {monthText(m)}
           </button>
         ))}
+      </div>
+
+      <div className="grid gap-4 md:grid-cols-2">
+        <BigProgress
+          title="会社全体（件数）"
+          targetLabel="目標件数"
+          acquiredLabel="現在の獲得件数"
+          target={totals.target}
+          acquired={totals.acquiredQty}
+          format={qtyText}
+        />
+        <BigProgress
+          title="会社全体（金額・税込）"
+          targetLabel="目標金額"
+          acquiredLabel="現在の獲得金額"
+          target={totals.targetAmount}
+          acquired={totals.acquiredAmount}
+          format={formatCurrency}
+        />
       </div>
 
       <div className="flex flex-wrap items-center justify-between gap-3">
