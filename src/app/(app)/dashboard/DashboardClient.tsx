@@ -922,60 +922,6 @@ export function DashboardClient({
         </div>
       </div>
 
-      {totalRows.length > 0 && (
-        <div className="rounded-lg border border-slate-200 bg-white">
-          <div className="border-b border-slate-200 px-4 py-2.5">
-            <h2 className="text-sm font-semibold text-slate-700">有効件数（案件×単価ごと）</h2>
-            <p className="text-xs text-slate-400">
-              全OPの合計です。有効件数は右上の「有効入力」から、OPごとに入力します。確定金額（有効件数×単価）は、会計の売上と請求書発行に反映されます（請求書発行の金額だけ、税抜です）。
-            </p>
-          </div>
-          <div className="overflow-x-auto">
-            <table className="min-w-full divide-y divide-slate-200 text-sm">
-              <thead className="bg-slate-50">
-                <tr>
-                  {monthTab === "all" && <th className="px-3 py-2 text-left font-medium text-slate-500">月</th>}
-                  <th className="px-3 py-2 text-left font-medium text-slate-500">案件名</th>
-                  <th className="px-3 py-2 text-right font-medium text-slate-500">単価（税込）</th>
-                  <th className="px-3 py-2 text-right font-medium text-slate-500">獲得件数</th>
-                  <th className="px-3 py-2 text-right font-medium text-slate-500">獲得金額（税込）</th>
-                  <th className="px-3 py-2 text-right font-medium text-slate-500">有効件数</th>
-                  <th className="px-3 py-2 text-right font-medium text-slate-500">確定金額（税込）</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-100">
-                {totalRows.map((row) => (
-                  <tr key={row.key} className="hover:bg-slate-50">
-                    {monthTab === "all" && <td className="px-3 py-1.5 text-slate-600">{monthText(row.month)}</td>}
-                    <td className="px-3 py-1.5 text-slate-700">{row.projectName}</td>
-                    <td className="px-3 py-1.5 text-right text-slate-700">{formatCurrency(row.unitPriceIncl)}</td>
-                    <td className="px-3 py-1.5 text-right text-slate-700">{qtyText(row.acquiredQty)}</td>
-                    <td className="px-3 py-1.5 text-right text-slate-700">{formatCurrency(row.acquiredAmount)}</td>
-                    <td className="px-3 py-1.5 text-right text-slate-700">{qtyText(row.confirmedQty)}</td>
-                    <td className="px-3 py-1.5 text-right font-medium text-slate-900">
-                      {formatCurrency(Math.round(row.confirmedQty * row.unitPriceIncl))}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-              <tfoot className="border-t-2 border-slate-300 bg-slate-100 font-bold text-slate-900">
-                <tr>
-                  <td className="px-3 py-2" colSpan={monthTab === "all" ? 3 : 2}>
-                    合計
-                  </td>
-                  <td className="px-3 py-2 text-right">{qtyText(sum(totalRows, (r) => r.acquiredQty))}</td>
-                  <td className="px-3 py-2 text-right">{formatCurrency(sum(totalRows, (r) => r.acquiredAmount))}</td>
-                  <td className="px-3 py-2 text-right">{qtyText(sum(totalRows, (r) => r.confirmedQty))}</td>
-                  <td className="px-3 py-2 text-right">
-                    {formatCurrency(Math.round(sum(totalRows, (r) => r.confirmedQty * r.unitPriceIncl)))}
-                  </td>
-                </tr>
-              </tfoot>
-            </table>
-          </div>
-        </div>
-      )}
-
       <div className="overflow-x-auto rounded-lg border border-slate-200 bg-white">
         <table className="min-w-full divide-y divide-slate-200 text-sm">
           <thead className="bg-slate-50">
@@ -1200,6 +1146,60 @@ export function DashboardClient({
           )}
         </div>
       </div>
+
+      {totalRows.length > 0 && (
+        <div className="rounded-lg border border-slate-200 bg-white">
+          <div className="border-b border-slate-200 px-4 py-2.5">
+            <h2 className="text-sm font-semibold text-slate-700">有効件数（案件×単価ごと）</h2>
+            <p className="text-xs text-slate-400">
+              全OPの合計です。有効件数は右上の「有効入力」から、OPごとに入力します。確定金額（有効件数×単価）は、会計の売上と請求書発行に反映されます（請求書発行の金額だけ、税抜です）。
+            </p>
+          </div>
+          <div className="overflow-x-auto">
+            <table className="min-w-full divide-y divide-slate-200 text-sm">
+              <thead className="bg-slate-50">
+                <tr>
+                  {monthTab === "all" && <th className="px-3 py-2 text-left font-medium text-slate-500">月</th>}
+                  <th className="px-3 py-2 text-left font-medium text-slate-500">案件名</th>
+                  <th className="px-3 py-2 text-right font-medium text-slate-500">単価（税込）</th>
+                  <th className="px-3 py-2 text-right font-medium text-slate-500">獲得件数</th>
+                  <th className="px-3 py-2 text-right font-medium text-slate-500">獲得金額（税込）</th>
+                  <th className="px-3 py-2 text-right font-medium text-slate-500">有効件数</th>
+                  <th className="px-3 py-2 text-right font-medium text-slate-500">確定金額（税込）</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100">
+                {totalRows.map((row) => (
+                  <tr key={row.key} className="hover:bg-slate-50">
+                    {monthTab === "all" && <td className="px-3 py-1.5 text-slate-600">{monthText(row.month)}</td>}
+                    <td className="px-3 py-1.5 text-slate-700">{row.projectName}</td>
+                    <td className="px-3 py-1.5 text-right text-slate-700">{formatCurrency(row.unitPriceIncl)}</td>
+                    <td className="px-3 py-1.5 text-right text-slate-700">{qtyText(row.acquiredQty)}</td>
+                    <td className="px-3 py-1.5 text-right text-slate-700">{formatCurrency(row.acquiredAmount)}</td>
+                    <td className="px-3 py-1.5 text-right text-slate-700">{qtyText(row.confirmedQty)}</td>
+                    <td className="px-3 py-1.5 text-right font-medium text-slate-900">
+                      {formatCurrency(Math.round(row.confirmedQty * row.unitPriceIncl))}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+              <tfoot className="border-t-2 border-slate-300 bg-slate-100 font-bold text-slate-900">
+                <tr>
+                  <td className="px-3 py-2" colSpan={monthTab === "all" ? 3 : 2}>
+                    合計
+                  </td>
+                  <td className="px-3 py-2 text-right">{qtyText(sum(totalRows, (r) => r.acquiredQty))}</td>
+                  <td className="px-3 py-2 text-right">{formatCurrency(sum(totalRows, (r) => r.acquiredAmount))}</td>
+                  <td className="px-3 py-2 text-right">{qtyText(sum(totalRows, (r) => r.confirmedQty))}</td>
+                  <td className="px-3 py-2 text-right">
+                    {formatCurrency(Math.round(sum(totalRows, (r) => r.confirmedQty * r.unitPriceIncl)))}
+                  </td>
+                </tr>
+              </tfoot>
+            </table>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
