@@ -1054,12 +1054,12 @@ export function DashboardClient({
               return (
               <Fragment key={group.key}>
                 <tr
-                  className="cursor-pointer bg-slate-700 font-bold text-white hover:bg-slate-600"
+                  className="cursor-pointer bg-sky-50 font-bold text-slate-900 hover:bg-sky-100"
                   onClick={() => toggle(setExpanded, group.key)}
                 >
-                  <td className="px-3 py-2">
+                  <td className="border-l-4 border-sky-400 px-3 py-2">
                     <span className="flex items-center gap-1.5">
-                      <span className="inline-block w-3 text-xs text-slate-300">{open ? "▼" : "▶"}</span>
+                      <span className="inline-block w-3 text-xs text-sky-600">{open ? "▼" : "▶"}</span>
                       {group.label}
                     </span>
                   </td>
@@ -1164,7 +1164,7 @@ export function DashboardClient({
             )}
           </tbody>
           {cells.length > 0 && (
-            <tfoot className="border-t-2 border-slate-400 bg-slate-300 font-bold text-slate-900">
+            <tfoot className="border-t-2 border-sky-300 bg-sky-100 font-bold text-slate-900">
               <tr>
                 <td className="px-3 py-2">合計</td>
                 <td className="px-3 py-2 text-right">{sum(groups, (g) => g.cells.length)}</td>
